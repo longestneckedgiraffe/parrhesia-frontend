@@ -102,13 +102,32 @@ hr {
   border-right: 2px solid #ddd;
 }
 
-.message.mine .peer {
-  color: #000;
-  font-weight: 500;
-}
-
 .message.system .peer {
   color: #5dadec;
+}
+
+.message.color-red .peer {
+  color: #e53935;
+}
+
+.message.color-orange .peer {
+  color: #fb8c00;
+}
+
+.message.color-green .peer {
+  color: #43a047;
+}
+
+.message.color-blue .peer {
+  color: #1e88e5;
+}
+
+.message.color-purple .peer {
+  color: #8e24aa;
+}
+
+.message.color-pink .peer {
+  color: #d81b60;
 }
 
 .message .text {

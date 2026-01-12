@@ -1,8 +1,9 @@
 import { config } from './config'
 import { GroupKeyManager } from './crypto'
+import type { PeerColor } from './crypto'
 
-export type MessageHandler = (peerId: string, message: string) => void
-export type PeerHandler = (peerId: string) => void
+export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
+export type PeerHandler = (peerId: string, color: PeerColor) => void
 export type StatusHandler = (status: string) => void
 
 interface WsMessage {
@@ -86,7 +87,8 @@ export class ChatConnection {
       case 'peer_key':
         if (data.peer_id && data.public_key) {
           await this.keyManager.addPeer(data.peer_id, data.public_key)
-          this.onPeerJoined(data.peer_id)
+          const color = this.keyManager.getPeerColor(data.peer_id)
+          this.onPeerJoined(data.peer_id, color)
 
           if (this.keyManager.hasGroupKey()) {
             await this.sendGroupKeyToPeer(data.peer_id)
@@ -97,7 +99,8 @@ export class ChatConnection {
       case 'peer_joined':
         if (data.peer_id && data.public_key) {
           await this.keyManager.addPeer(data.peer_id, data.public_key)
-          this.onPeerJoined(data.peer_id)
+          const color = this.keyManager.getPeerColor(data.peer_id)
+          this.onPeerJoined(data.peer_id, color)
 
           if (this.keyManager.hasGroupKey()) {
             await this.sendGroupKeyToPeer(data.peer_id)
@@ -107,8 +110,9 @@ export class ChatConnection {
 
       case 'peer_left':
         if (data.peer_id) {
+          const color = this.keyManager.getPeerColor(data.peer_id)
           this.keyManager.removePeer(data.peer_id)
-          this.onPeerLeft(data.peer_id)
+          this.onPeerLeft(data.peer_id, color)
         }
         break
 
@@ -127,7 +131,8 @@ export class ChatConnection {
         if (data.peer_id && data.payload) {
           try {
             const decrypted = await this.keyManager.decryptMessage(data.payload)
-            this.onMessage(data.peer_id, decrypted)
+            const color = this.keyManager.getPeerColor(data.peer_id)
+            this.onMessage(data.peer_id, color, decrypted)
           } catch {
             console.error('Failed to decrypt message from', data.peer_id)
           }
@@ -178,6 +183,10 @@ export class ChatConnection {
 
   canSend(): boolean {
     return this.keyManager.hasGroupKey() && this.keyManager.hasPeers()
+  }
+
+  getMyColor(): PeerColor {
+    return this.keyManager.getMyColor()
   }
 }
 

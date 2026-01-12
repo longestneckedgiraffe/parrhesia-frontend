@@ -1,5 +1,7 @@
 import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
+import { getOrAssignMyColor } from './crypto'
+import type { PeerColor } from './crypto'
 
 const DEV_MODE = import.meta.env.DEV
 
@@ -20,13 +22,14 @@ type View = 'landing' | 'chat'
 
 interface Message {
   peerId: string
+  color: PeerColor
   text: string
   isMine: boolean
   isSystem?: boolean
 }
 
 function addSystemMessage(text: string): void {
-  messages.push({ peerId: 'system', text, isMine: false, isSystem: true })
+  messages.push({ peerId: 'system', color: 'blue', text, isMine: false, isSystem: true })
   render()
 }
 
@@ -36,6 +39,7 @@ let messages: Message[] = []
 let canSend = false
 let status = ''
 let myPeerId = ''
+let myColor: PeerColor = 'blue'
 
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
@@ -73,9 +77,9 @@ function renderLanding(app: HTMLDivElement): void {
 function renderChat(app: HTMLDivElement): void {
   const messagesHtml = messages
     .map(m => {
-      const peerClass = m.isMine ? 'mine' : m.isSystem ? 'system' : 'theirs'
-      const peerName = m.isMine ? 'you' : m.isSystem ? 'system' : m.peerId.slice(0, 8)
-      return `<div class="message ${peerClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
+      const colorClass = m.isSystem ? 'system' : `color-${m.color}`
+      const peerName = m.isMine ? myColor : m.isSystem ? 'system' : m.color
+      return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
     })
     .join('')
 
@@ -148,6 +152,7 @@ async function joinRoom(roomId: string): Promise<void> {
 
   if (DEV_MODE) {
     myPeerId = 'dev-user'
+    myColor = getOrAssignMyColor()
     canSend = true
     currentView = 'chat'
     const url = new URL(window.location.href)
@@ -160,17 +165,17 @@ async function joinRoom(roomId: string): Promise<void> {
 
   connection = new ChatConnection(
     roomId,
-    (peerId, text) => {
-      messages.push({ peerId, text, isMine: false })
+    (peerId, color, text) => {
+      messages.push({ peerId, color, text, isMine: false })
       render()
     },
-    (peerId) => {
+    (_peerId, color) => {
       canSend = connection?.canSend() || false
-      addSystemMessage(`${peerId.slice(0, 8)} joined`)
+      addSystemMessage(`${color} joined`)
     },
-    (peerId) => {
+    (_peerId, color) => {
       canSend = connection?.canSend() || false
-      addSystemMessage(`${peerId.slice(0, 8)} left`)
+      addSystemMessage(`${color} left`)
     },
     (newStatus) => {
       canSend = connection?.canSend() || false
@@ -183,6 +188,7 @@ async function joinRoom(roomId: string): Promise<void> {
 
   await connection.connect()
   myPeerId = connection.getPeerId()
+  myColor = connection.getMyColor()
 
   const url = new URL(window.location.href)
   url.searchParams.set('room', roomId)
@@ -218,7 +224,7 @@ async function handleSendMessage(): Promise<void> {
   const text = input.value.trim()
   if (!text || !canSend) return
 
-  messages.push({ peerId: myPeerId, text, isMine: true })
+  messages.push({ peerId: myPeerId, color: myColor, text, isMine: true })
   input.value = ''
   render()
 

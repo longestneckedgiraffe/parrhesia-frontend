@@ -3,6 +3,36 @@ export interface KeyPair {
   privateKey: CryptoKey
 }
 
+export const PEER_COLORS = ['red', 'orange', 'green', 'blue', 'purple', 'pink'] as const
+export type PeerColor = typeof PEER_COLORS[number]
+
+export function getOrAssignMyColor(): PeerColor {
+  const stored = localStorage.getItem('parrhesia-color')
+  if (stored && PEER_COLORS.includes(stored as PeerColor)) {
+    return stored as PeerColor
+  }
+  const color = PEER_COLORS[Math.floor(Math.random() * PEER_COLORS.length)]
+  localStorage.setItem('parrhesia-color', color)
+  return color
+}
+
+export function encodeKeyWithColor(publicKey: string, color: PeerColor): string {
+  return `${color}:${publicKey}`
+}
+
+export function decodeKeyWithColor(encoded: string): { color: PeerColor; publicKey: string } {
+  const colonIndex = encoded.indexOf(':')
+  if (colonIndex === -1) {
+    return { color: 'blue', publicKey: encoded }
+  }
+  const color = encoded.slice(0, colonIndex) as PeerColor
+  const publicKey = encoded.slice(colonIndex + 1)
+  if (!PEER_COLORS.includes(color)) {
+    return { color: 'blue', publicKey: encoded }
+  }
+  return { color, publicKey }
+}
+
 const ECDH_PARAMS: EcKeyGenParams = {
   name: 'ECDH',
   namedCurve: 'P-256'
@@ -96,13 +126,24 @@ export async function decrypt(key: CryptoKey, encryptedBase64: string): Promise<
 export class GroupKeyManager {
   private keyPair: KeyPair | null = null
   private peerSharedKeys: Map<string, CryptoKey> = new Map()
+  private peerColors: Map<string, PeerColor> = new Map()
   private groupKey: CryptoKey | null = null
   private isCreator: boolean = false
   private creatorId: string = ''
+  private myColor: PeerColor
+
+  constructor() {
+    this.myColor = getOrAssignMyColor()
+  }
 
   async initialize(): Promise<string> {
     this.keyPair = await generateKeyPair()
-    return exportPublicKey(this.keyPair.publicKey)
+    const publicKey = await exportPublicKey(this.keyPair.publicKey)
+    return encodeKeyWithColor(publicKey, this.myColor)
+  }
+
+  getMyColor(): PeerColor {
+    return this.myColor
   }
 
   setCreatorStatus(isCreator: boolean, creatorId: string): void {
@@ -114,15 +155,22 @@ export class GroupKeyManager {
     this.groupKey = await generateGroupKey()
   }
 
-  async addPeer(peerId: string, publicKeyBase64: string): Promise<void> {
+  async addPeer(peerId: string, encodedPublicKey: string): Promise<void> {
     if (!this.keyPair) throw new Error('Key pair not initialized')
-    const peerPublicKey = await importPublicKey(publicKeyBase64)
+    const { color, publicKey } = decodeKeyWithColor(encodedPublicKey)
+    const peerPublicKey = await importPublicKey(publicKey)
     const sharedKey = await deriveSharedKey(this.keyPair.privateKey, peerPublicKey)
     this.peerSharedKeys.set(peerId, sharedKey)
+    this.peerColors.set(peerId, color)
   }
 
   removePeer(peerId: string): void {
     this.peerSharedKeys.delete(peerId)
+    this.peerColors.delete(peerId)
+  }
+
+  getPeerColor(peerId: string): PeerColor {
+    return this.peerColors.get(peerId) || 'blue'
   }
 
   async encryptGroupKeyForPeer(peerId: string): Promise<string> {
