@@ -71,6 +71,7 @@ function renderChat(app: HTMLDivElement): void {
     <div class="chat">
       <div class="chat-header">
         <button id="leave-room">Leave</button>
+        <button id="copy-link">Copy Link</button>
       </div>
       <div class="messages" id="messages">${messagesHtml || '<p class="empty">No messages yet</p>'}</div>
       <div class="chat-input">
@@ -80,6 +81,7 @@ function renderChat(app: HTMLDivElement): void {
     </div>
   `
   document.getElementById('leave-room')?.addEventListener('click', handleLeaveRoom)
+  document.getElementById('copy-link')?.addEventListener('click', handleCopyLink)
   document.getElementById('send-message')?.addEventListener('click', handleSendMessage)
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleSendMessage()
@@ -155,6 +157,15 @@ async function joinRoom(roomId: string): Promise<void> {
   window.history.pushState({}, '', url.toString())
 }
 
+function handleCopyLink(): void {
+  navigator.clipboard.writeText(window.location.href)
+  const btn = document.getElementById('copy-link')
+  if (btn) {
+    btn.textContent = 'Copied!'
+    setTimeout(() => { btn.textContent = 'Copy Link' }, 1500)
+  }
+}
+
 function handleLeaveRoom(): void {
   connection?.disconnect()
   connection = null
@@ -191,6 +202,8 @@ async function init(): Promise<void> {
     if (exists) {
       await joinRoom(roomId)
       return
+    } else {
+      status = 'Room not found or expired'
     }
   }
 
