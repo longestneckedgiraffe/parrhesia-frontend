@@ -1,6 +1,8 @@
 import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
 
+const DEV_MODE = import.meta.env.DEV
+
 const WOLF_ASCII = `                     .
                     / V\\
                   / \`  /
@@ -91,6 +93,11 @@ function renderChat(app: HTMLDivElement): void {
 }
 
 async function handleCreateRoom(): Promise<void> {
+  if (DEV_MODE) {
+    const fakeRoomId = 'dev-' + Math.random().toString(36).slice(2, 10)
+    await joinRoom(fakeRoomId)
+    return
+  }
   status = 'Creating room...'
   render()
   try {
@@ -110,6 +117,10 @@ async function handleJoinRoom(): Promise<void> {
     render()
     return
   }
+  if (DEV_MODE) {
+    await joinRoom(roomId)
+    return
+  }
   status = 'Checking room...'
   render()
   const exists = await checkRoom(roomId)
@@ -124,6 +135,18 @@ async function handleJoinRoom(): Promise<void> {
 async function joinRoom(roomId: string): Promise<void> {
   messages = []
   canSend = false
+
+  if (DEV_MODE) {
+    myPeerId = 'dev-user'
+    canSend = true
+    currentView = 'chat'
+    status = 'Dev mode'
+    const url = new URL(window.location.href)
+    url.searchParams.set('room', roomId)
+    window.history.pushState({}, '', url.toString())
+    render()
+    return
+  }
 
   connection = new ChatConnection(
     roomId,
@@ -184,13 +207,15 @@ function handleLeaveRoom(): void {
 async function handleSendMessage(): Promise<void> {
   const input = document.getElementById('message-input') as HTMLInputElement
   const text = input.value.trim()
-  if (!text || !connection || !canSend) return
+  if (!text || !canSend) return
 
   messages.push({ peerId: myPeerId, text, isMine: true })
   input.value = ''
   render()
 
-  await connection.sendMessage(text)
+  if (!DEV_MODE && connection) {
+    await connection.sendMessage(text)
+  }
 }
 
 async function init(): Promise<void> {
@@ -198,6 +223,10 @@ async function init(): Promise<void> {
   const roomId = url.searchParams.get('room')
 
   if (roomId) {
+    if (DEV_MODE) {
+      await joinRoom(roomId)
+      return
+    }
     const exists = await checkRoom(roomId)
     if (exists) {
       await joinRoom(roomId)
