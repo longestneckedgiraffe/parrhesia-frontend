@@ -88,7 +88,7 @@ export class ChatConnection {
           await this.keyManager.addPeer(data.peer_id, data.public_key)
           this.onPeerJoined(data.peer_id)
 
-          if (this.keyManager.getIsCreator()) {
+          if (this.keyManager.hasGroupKey()) {
             await this.sendGroupKeyToPeer(data.peer_id)
           }
         }
@@ -99,7 +99,7 @@ export class ChatConnection {
           await this.keyManager.addPeer(data.peer_id, data.public_key)
           this.onPeerJoined(data.peer_id)
 
-          if (this.keyManager.getIsCreator()) {
+          if (this.keyManager.hasGroupKey()) {
             await this.sendGroupKeyToPeer(data.peer_id)
           }
         }

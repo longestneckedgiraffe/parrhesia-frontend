@@ -107,6 +107,10 @@ hr {
   font-weight: 500;
 }
 
+.message.system .peer {
+  color: #5dadec;
+}
+
 .message .text {
   padding-left: 10px;
   flex: 1;

@@ -22,6 +22,12 @@ interface Message {
   peerId: string
   text: string
   isMine: boolean
+  isSystem?: boolean
+}
+
+function addSystemMessage(text: string): void {
+  messages.push({ peerId: 'system', text, isMine: false, isSystem: true })
+  render()
 }
 
 let currentView: View = 'landing'
@@ -66,7 +72,11 @@ function renderLanding(app: HTMLDivElement): void {
 
 function renderChat(app: HTMLDivElement): void {
   const messagesHtml = messages
-    .map(m => `<div class="message ${m.isMine ? 'mine' : 'theirs'}"><span class="peer">${m.isMine ? 'you' : m.peerId.slice(0, 8)}</span><span class="text">${m.text}</span></div>`)
+    .map(m => {
+      const peerClass = m.isMine ? 'mine' : m.isSystem ? 'system' : 'theirs'
+      const peerName = m.isMine ? 'you' : m.isSystem ? 'system' : m.peerId.slice(0, 8)
+      return `<div class="message ${peerClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
+    })
     .join('')
 
   app.innerHTML = `
@@ -140,11 +150,11 @@ async function joinRoom(roomId: string): Promise<void> {
     myPeerId = 'dev-user'
     canSend = true
     currentView = 'chat'
-    status = 'Dev mode'
     const url = new URL(window.location.href)
     url.searchParams.set('room', roomId)
     window.history.pushState({}, '', url.toString())
     render()
+    addSystemMessage('Messages are local only')
     return
   }
 
@@ -154,18 +164,17 @@ async function joinRoom(roomId: string): Promise<void> {
       messages.push({ peerId, text, isMine: false })
       render()
     },
-    () => {
+    (peerId) => {
       canSend = connection?.canSend() || false
-      render()
+      addSystemMessage(`${peerId.slice(0, 8)} joined`)
     },
-    () => {
+    (peerId) => {
       canSend = connection?.canSend() || false
-      render()
+      addSystemMessage(`${peerId.slice(0, 8)} left`)
     },
     (newStatus) => {
-      status = newStatus
       canSend = connection?.canSend() || false
-      render()
+      addSystemMessage(newStatus)
     }
   )
 
