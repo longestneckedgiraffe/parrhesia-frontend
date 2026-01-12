@@ -40,15 +40,15 @@ export class ChatConnection {
   }
 
   async connect(): Promise<void> {
-    this.onStatus('Generating encryption keys...')
+    this.onStatus('Generating encryption keys')
     const publicKey = await this.keyManager.initialize()
 
-    this.onStatus('Connecting to room...')
+    this.onStatus('Connecting to room')
     const wsUrl = config.endpoints.websocket(this.roomId)
     this.ws = new WebSocket(wsUrl)
 
     this.ws.onopen = () => {
-      this.onStatus('Connected, waiting for welcome...')
+      this.onStatus('Connected, waiting for server')
     }
 
     this.ws.onmessage = async (event) => {
@@ -77,7 +77,7 @@ export class ChatConnection {
           await this.keyManager.generateAndSetGroupKey()
           this.onStatus('Room created, waiting for peers...')
         } else {
-          this.onStatus('Joined room, waiting for group key...')
+          this.onStatus('Joined room! Waiting for group key')
         }
 
         this.send({ type: 'key_announce', public_key: publicKey })
