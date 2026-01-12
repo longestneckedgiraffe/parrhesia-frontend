@@ -1,0 +1,141 @@
+body {
+  margin: 1em;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 1em 0;
+}
+
+#app {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.landing {
+  text-align: center;
+}
+
+.wolf {
+  font-size: 8px;
+  line-height: 1;
+  font-family: monospace;
+}
+
+.join-section {
+  margin-top: 0.5em;
+}
+
+.actions button,
+.actions input {
+  padding: 0.5em 1em;
+  border: 1px solid #ccc;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.actions button {
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.actions input {
+  background: #fff;
+}
+
+.chat {
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-header {
+  padding-bottom: 0.75em;
+  margin-bottom: 0.75em;
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+
+.chat-header button {
+  background: none;
+  border: 1px solid #ccc;
+  padding: 0.25em 0.75em;
+  cursor: pointer;
+}
+
+.chat-header .info {
+  color: #666;
+  font-size: 13px;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.messages .empty {
+  color: #999;
+  padding: 1em;
+}
+
+.message {
+  display: flex;
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.message .peer {
+  width: 70px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 8px;
+  color: #666;
+  border-right: 2px solid #ddd;
+}
+
+.message.mine .peer {
+  color: #000;
+  font-weight: 500;
+}
+
+.message .text {
+  padding-left: 10px;
+  flex: 1;
+}
+
+.chat-input {
+  margin-top: 0.75em;
+  padding-top: 0.75em;
+  border-top: 1px solid #ddd;
+  display: flex;
+  gap: 0.5em;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 0.5em;
+  border: 1px solid #ccc;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.chat-input button {
+  padding: 0.5em 1em;
+  border: 1px solid #ccc;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.chat-input button:disabled,
+.chat-input input:disabled {
+  opacity: 0.5;
+}
