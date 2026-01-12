@@ -28,8 +28,30 @@ interface Message {
   isSystem?: boolean
 }
 
+let currentRoomId = ''
+
+function getStorageKey(roomId: string): string {
+  return `parrhesia-messages-${roomId}`
+}
+
+function saveMessages(): void {
+  if (!currentRoomId) return
+  localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(messages))
+}
+
+function loadMessages(roomId: string): Message[] {
+  const stored = localStorage.getItem(getStorageKey(roomId))
+  if (!stored) return []
+  try {
+    return JSON.parse(stored)
+  } catch {
+    return []
+  }
+}
+
 function addSystemMessage(text: string): void {
   messages.push({ peerId: 'system', color: 'blue', text, isMine: false, isSystem: true })
+  saveMessages()
   render()
 }
 
@@ -147,7 +169,8 @@ async function handleJoinRoom(): Promise<void> {
 }
 
 async function joinRoom(roomId: string): Promise<void> {
-  messages = []
+  currentRoomId = roomId
+  messages = loadMessages(roomId)
   canSend = false
 
   if (DEV_MODE) {
@@ -159,7 +182,9 @@ async function joinRoom(roomId: string): Promise<void> {
     url.searchParams.set('room', roomId)
     window.history.pushState({}, '', url.toString())
     render()
-    addSystemMessage('Messages are local only')
+    if (messages.length === 0) {
+      addSystemMessage('Messages are local only')
+    }
     return
   }
 
@@ -167,6 +192,7 @@ async function joinRoom(roomId: string): Promise<void> {
     roomId,
     (peerId, color, text) => {
       messages.push({ peerId, color, text, isMine: false })
+      saveMessages()
       render()
     },
     (_peerId, color) => {
@@ -208,6 +234,7 @@ function handleLeaveRoom(): void {
   connection?.disconnect()
   connection = null
   currentView = 'landing'
+  currentRoomId = ''
   status = ''
   messages = []
   canSend = false
@@ -225,6 +252,7 @@ async function handleSendMessage(): Promise<void> {
   if (!text || !canSend) return
 
   messages.push({ peerId: myPeerId, color: myColor, text, isMine: true })
+  saveMessages()
   input.value = ''
   render()
 
