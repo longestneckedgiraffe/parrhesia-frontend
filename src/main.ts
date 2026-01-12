@@ -1,6 +1,6 @@
 import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
-import { getOrAssignMyColor } from './crypto'
+import { deriveColorFromPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
 
 const DEV_MODE = import.meta.env.DEV
@@ -175,7 +175,7 @@ async function joinRoom(roomId: string): Promise<void> {
 
   if (DEV_MODE) {
     myPeerId = 'dev-user'
-    myColor = getOrAssignMyColor()
+    myColor = deriveColorFromPublicKey('dev-public-key')
     canSend = true
     currentView = 'chat'
     const url = new URL(window.location.href)

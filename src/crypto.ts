@@ -6,33 +6,6 @@ export interface KeyPair {
 export const PEER_COLORS = ['red', 'orange', 'green', 'blue', 'purple', 'pink'] as const
 export type PeerColor = typeof PEER_COLORS[number]
 
-export function getOrAssignMyColor(): PeerColor {
-  const stored = localStorage.getItem('parrhesia-color')
-  if (stored && PEER_COLORS.includes(stored as PeerColor)) {
-    return stored as PeerColor
-  }
-  const color = PEER_COLORS[Math.floor(Math.random() * PEER_COLORS.length)]
-  localStorage.setItem('parrhesia-color', color)
-  return color
-}
-
-export function encodeKeyWithColor(publicKey: string, color: PeerColor): string {
-  return `${color}:${publicKey}`
-}
-
-export function decodeKeyWithColor(encoded: string): { color: PeerColor; publicKey: string } {
-  const colonIndex = encoded.indexOf(':')
-  if (colonIndex === -1) {
-    return { color: 'blue', publicKey: encoded }
-  }
-  const color = encoded.slice(0, colonIndex) as PeerColor
-  const publicKey = encoded.slice(colonIndex + 1)
-  if (!PEER_COLORS.includes(color)) {
-    return { color: 'blue', publicKey: encoded }
-  }
-  return { color, publicKey }
-}
-
 const ECDH_PARAMS: EcKeyGenParams = {
   name: 'ECDH',
   namedCurve: 'P-256'
@@ -43,12 +16,21 @@ const AES_PARAMS = {
   length: 256
 }
 
-export async function generateKeyPair(): Promise<KeyPair> {
-  const keyPair = await crypto.subtle.generateKey(ECDH_PARAMS, true, ['deriveKey'])
-  return {
-    publicKey: keyPair.publicKey,
-    privateKey: keyPair.privateKey
+export function deriveColorFromPublicKey(publicKeyBase64: string): PeerColor {
+  let hash = 0
+  for (let i = 0; i < publicKeyBase64.length; i++) {
+    hash = ((hash << 5) - hash) + publicKeyBase64.charCodeAt(i)
+    hash = hash & hash
   }
+  return PEER_COLORS[Math.abs(hash) % PEER_COLORS.length]
+}
+
+async function exportPrivateKey(key: CryptoKey): Promise<JsonWebKey> {
+  return crypto.subtle.exportKey('jwk', key)
+}
+
+async function importPrivateKey(jwk: JsonWebKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey('jwk', jwk, ECDH_PARAMS, true, ['deriveKey'])
 }
 
 export async function exportPublicKey(key: CryptoKey): Promise<string> {
@@ -63,6 +45,50 @@ export async function importPublicKey(base64Key: string): Promise<CryptoKey> {
     bytes[i] = binaryString.charCodeAt(i)
   }
   return crypto.subtle.importKey('raw', bytes, ECDH_PARAMS, true, [])
+}
+
+async function generateKeyPair(): Promise<KeyPair> {
+  const keyPair = await crypto.subtle.generateKey(ECDH_PARAMS, true, ['deriveKey'])
+  return {
+    publicKey: keyPair.publicKey,
+    privateKey: keyPair.privateKey
+  }
+}
+
+async function saveKeyPairToStorage(keyPair: KeyPair, publicKeyBase64: string): Promise<void> {
+  const privateJwk = await exportPrivateKey(keyPair.privateKey)
+  localStorage.setItem('parrhesia-keypair', JSON.stringify({
+    privateKey: privateJwk,
+    publicKey: publicKeyBase64
+  }))
+}
+
+async function loadKeyPairFromStorage(): Promise<{ keyPair: KeyPair; publicKey: string } | null> {
+  const stored = localStorage.getItem('parrhesia-keypair')
+  if (!stored) return null
+
+  try {
+    const data = JSON.parse(stored)
+    const privateKey = await importPrivateKey(data.privateKey)
+    const publicKey = await importPublicKey(data.publicKey)
+    return {
+      keyPair: { publicKey, privateKey },
+      publicKey: data.publicKey
+    }
+  } catch {
+    localStorage.removeItem('parrhesia-keypair')
+    return null
+  }
+}
+
+export async function getOrCreateKeyPair(): Promise<{ keyPair: KeyPair; publicKey: string }> {
+  const stored = await loadKeyPairFromStorage()
+  if (stored) return stored
+
+  const keyPair = await generateKeyPair()
+  const publicKey = await exportPublicKey(keyPair.publicKey)
+  await saveKeyPairToStorage(keyPair, publicKey)
+  return { keyPair, publicKey }
 }
 
 export async function generateGroupKey(): Promise<CryptoKey> {
@@ -125,21 +151,18 @@ export async function decrypt(key: CryptoKey, encryptedBase64: string): Promise<
 
 export class GroupKeyManager {
   private keyPair: KeyPair | null = null
+  private myColor: PeerColor = 'blue'
   private peerSharedKeys: Map<string, CryptoKey> = new Map()
   private peerColors: Map<string, PeerColor> = new Map()
   private groupKey: CryptoKey | null = null
   private isCreator: boolean = false
   private creatorId: string = ''
-  private myColor: PeerColor
-
-  constructor() {
-    this.myColor = getOrAssignMyColor()
-  }
 
   async initialize(): Promise<string> {
-    this.keyPair = await generateKeyPair()
-    const publicKey = await exportPublicKey(this.keyPair.publicKey)
-    return encodeKeyWithColor(publicKey, this.myColor)
+    const { keyPair, publicKey } = await getOrCreateKeyPair()
+    this.keyPair = keyPair
+    this.myColor = deriveColorFromPublicKey(publicKey)
+    return publicKey
   }
 
   getMyColor(): PeerColor {
@@ -155,13 +178,12 @@ export class GroupKeyManager {
     this.groupKey = await generateGroupKey()
   }
 
-  async addPeer(peerId: string, encodedPublicKey: string): Promise<void> {
+  async addPeer(peerId: string, publicKeyBase64: string): Promise<void> {
     if (!this.keyPair) throw new Error('Key pair not initialized')
-    const { color, publicKey } = decodeKeyWithColor(encodedPublicKey)
-    const peerPublicKey = await importPublicKey(publicKey)
+    const peerPublicKey = await importPublicKey(publicKeyBase64)
     const sharedKey = await deriveSharedKey(this.keyPair.privateKey, peerPublicKey)
     this.peerSharedKeys.set(peerId, sharedKey)
-    this.peerColors.set(peerId, color)
+    this.peerColors.set(peerId, deriveColorFromPublicKey(publicKeyBase64))
   }
 
   removePeer(peerId: string): void {
