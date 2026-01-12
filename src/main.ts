@@ -25,7 +25,6 @@ interface Message {
 let currentView: View = 'landing'
 let connection: ChatConnection | null = null
 let messages: Message[] = []
-let peerCount = 0
 let canSend = false
 let status = ''
 let myPeerId = ''
@@ -122,7 +121,6 @@ async function handleJoinRoom(): Promise<void> {
 
 async function joinRoom(roomId: string): Promise<void> {
   messages = []
-  peerCount = 0
   canSend = false
 
   connection = new ChatConnection(
@@ -131,13 +129,11 @@ async function joinRoom(roomId: string): Promise<void> {
       messages.push({ peerId, text, isMine: false })
       render()
     },
-    (_peerId) => {
-      peerCount = connection?.getPeerCount() || 0
+    () => {
       canSend = connection?.canSend() || false
       render()
     },
-    (_peerId) => {
-      peerCount = connection?.getPeerCount() || 0
+    () => {
       canSend = connection?.canSend() || false
       render()
     },
@@ -165,7 +161,6 @@ function handleLeaveRoom(): void {
   currentView = 'landing'
   status = ''
   messages = []
-  peerCount = 0
   canSend = false
 
   const url = new URL(window.location.href)
