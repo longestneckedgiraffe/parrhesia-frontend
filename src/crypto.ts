@@ -3,7 +3,11 @@ export interface KeyPair {
   privateKey: CryptoKey
 }
 
-export const PEER_COLORS = ['red', 'orange', 'green', 'blue', 'purple', 'pink'] as const
+export const PEER_COLORS = [
+  'black', 'gray', 'silver', 'maroon', 'red', 'olive',
+  'green', 'lime', 'navy', 'blue', 'teal', 'cyan',
+  'purple', 'magenta', 'orange', 'gold'
+] as const
 export type PeerColor = typeof PEER_COLORS[number]
 
 const ECDH_PARAMS: EcKeyGenParams = {

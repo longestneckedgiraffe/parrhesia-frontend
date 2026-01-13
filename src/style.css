@@ -106,29 +106,22 @@ hr {
   color: #5dadec;
 }
 
-.message.color-red .peer {
-  color: #e53935;
-}
-
-.message.color-orange .peer {
-  color: #fb8c00;
-}
-
-.message.color-green .peer {
-  color: #43a047;
-}
-
-.message.color-blue .peer {
-  color: #1e88e5;
-}
-
-.message.color-purple .peer {
-  color: #8e24aa;
-}
-
-.message.color-pink .peer {
-  color: #d81b60;
-}
+.message.color-black .peer { color: #000000; }
+.message.color-gray .peer { color: #666666; }
+.message.color-silver .peer { color: #888888; }
+.message.color-maroon .peer { color: #800000; }
+.message.color-red .peer { color: #cc0000; }
+.message.color-olive .peer { color: #808000; }
+.message.color-green .peer { color: #008000; }
+.message.color-lime .peer { color: #32cd32; }
+.message.color-navy .peer { color: #000080; }
+.message.color-blue .peer { color: #0066cc; }
+.message.color-teal .peer { color: #008080; }
+.message.color-cyan .peer { color: #00a0a0; }
+.message.color-purple .peer { color: #800080; }
+.message.color-magenta .peer { color: #cc00cc; }
+.message.color-orange .peer { color: #cc6600; }
+.message.color-gold .peer { color: #b8860b; }
 
 .message .text {
   padding-left: 10px;
