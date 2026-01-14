@@ -142,6 +142,10 @@ export class ChatConnection {
       case 'room_expired':
         this.onStatus('Room has expired')
         break
+
+      case 'room_full':
+        this.onStatus('Room is full (max 16 participants)')
+        break
     }
   }
 
