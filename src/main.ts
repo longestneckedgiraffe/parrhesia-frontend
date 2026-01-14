@@ -36,6 +36,7 @@ interface Message {
   text: string
   isMine: boolean
   isSystem?: boolean
+  isNotification?: boolean
 }
 
 let currentRoomId = ''
@@ -61,6 +62,12 @@ function loadMessages(roomId: string): Message[] {
 
 function addSystemMessage(text: string): void {
   messages.push({ peerId: 'system', color: 'blue', text, isMine: false, isSystem: true })
+  saveMessages()
+  render()
+}
+
+function addNotification(color: PeerColor, text: string): void {
+  messages.push({ peerId: 'notification', color, text, isMine: false, isNotification: true })
   saveMessages()
   render()
 }
@@ -115,11 +122,42 @@ function renderLanding(app: HTMLDivElement): void {
 }
 
 function renderChat(app: HTMLDivElement): void {
-  const messagesHtml = messages
-    .map(m => {
-      const colorClass = m.isSystem ? 'system' : `color-${m.color}`
-      const peerName = m.isMine ? myColor : m.isSystem ? 'system' : m.color
-      return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
+  const grouped: Array<{ isSystemGroup: boolean; items: Message[] }> = []
+  for (const m of messages) {
+    if (m.isSystem) {
+      const last = grouped[grouped.length - 1]
+      if (last && last.isSystemGroup) {
+        last.items.push(m)
+      } else {
+        grouped.push({ isSystemGroup: true, items: [m] })
+      }
+    } else {
+      grouped.push({ isSystemGroup: false, items: [m] })
+    }
+  }
+
+  let groupIndex = 0
+  const messagesHtml = grouped
+    .map(group => {
+      if (group.isSystemGroup) {
+        const idx = groupIndex++
+        const systemMessages = group.items
+          .map(m => `<div class="message system"><span class="peer">*</span><span class="text">${m.text}</span></div>`)
+          .join('')
+        return `<div class="system-group" data-group="${idx}">
+          <div class="system-toggle"><span class="peer">*</span><span class="text">System messages</span></div>
+          <div class="system-content">${systemMessages}</div>
+        </div>`
+      } else {
+        const m = group.items[0]
+        if (m.isNotification) {
+          const colorClass = `color-${m.color}`
+          return `<div class="message notification ${colorClass}"><span class="peer">${m.color}</span><span class="text">${m.text}</span></div>`
+        }
+        const colorClass = `color-${m.color}`
+        const peerName = m.isMine ? myColor : m.color
+        return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
+      }
     })
     .join('')
 
@@ -141,6 +179,11 @@ function renderChat(app: HTMLDivElement): void {
   document.getElementById('send-message')?.addEventListener('click', handleSendMessage)
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleSendMessage()
+  })
+  document.querySelectorAll('.system-group').forEach(group => {
+    group.addEventListener('click', () => {
+      group.classList.toggle('expanded')
+    })
   })
   const messagesDiv = document.getElementById('messages')
   if (messagesDiv) messagesDiv.scrollTop = messagesDiv.scrollHeight
@@ -211,11 +254,11 @@ async function joinRoom(roomId: string): Promise<void> {
     },
     (_peerId, color) => {
       canSend = connection?.canSend() || false
-      addSystemMessage(`${color} has joined`)
+      addNotification(color, 'has joined')
     },
     (_peerId, color) => {
       canSend = connection?.canSend() || false
-      addSystemMessage(`${color} has left`)
+      addNotification(color, 'has left')
     },
     (newStatus) => {
       canSend = connection?.canSend() || false
