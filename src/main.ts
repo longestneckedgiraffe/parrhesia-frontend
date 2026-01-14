@@ -144,13 +144,11 @@ async function handleCreateRoom(): Promise<void> {
     await joinRoom(fakeRoomId)
     return
   }
-  status = 'Creating room...'
-  render()
   try {
     const roomId = await createRoom()
     await joinRoom(roomId)
   } catch {
-    status = 'Failed to create room'
+    status = 'Unable to create room'
     render()
   }
 }
@@ -159,7 +157,7 @@ async function handleJoinRoom(): Promise<void> {
   const input = document.getElementById('room-input') as HTMLInputElement
   const roomId = input.value.trim()
   if (!roomId) {
-    status = 'Enter a room ID'
+    status = 'Please enter a room ID'
     render()
     return
   }
@@ -167,11 +165,9 @@ async function handleJoinRoom(): Promise<void> {
     await joinRoom(roomId)
     return
   }
-  status = 'Checking room...'
-  render()
   const exists = await checkRoom(roomId)
   if (!exists) {
-    status = 'Room not found'
+    status = 'Room does not exist'
     render()
     return
   }
@@ -193,7 +189,7 @@ async function joinRoom(roomId: string): Promise<void> {
     window.history.pushState({}, '', url.toString())
     render()
     if (messages.length === 0) {
-      addSystemMessage('Messages are local only')
+      addSystemMessage('Running in development mode')
     }
     return
   }
@@ -207,11 +203,11 @@ async function joinRoom(roomId: string): Promise<void> {
     },
     (_peerId, color) => {
       canSend = connection?.canSend() || false
-      addSystemMessage(`${color} joined`)
+      addSystemMessage(`${color} has joined`)
     },
     (_peerId, color) => {
       canSend = connection?.canSend() || false
-      addSystemMessage(`${color} left`)
+      addSystemMessage(`${color} has left`)
     },
     (newStatus) => {
       canSend = connection?.canSend() || false
@@ -285,7 +281,7 @@ async function init(): Promise<void> {
       await joinRoom(roomId)
       return
     } else {
-      status = 'Room not found or expired'
+      status = 'Room does not exist or has expired'
     }
   }
 

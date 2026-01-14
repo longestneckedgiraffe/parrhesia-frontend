@@ -41,16 +41,9 @@ export class ChatConnection {
   }
 
   async connect(): Promise<void> {
-    this.onStatus('Generating encryption keys')
     const publicKey = await this.keyManager.initialize()
-
-    this.onStatus('Connecting to room')
     const wsUrl = config.endpoints.websocket(this.roomId)
     this.ws = new WebSocket(wsUrl)
-
-    this.ws.onopen = () => {
-      this.onStatus('Connected, waiting for server')
-    }
 
     this.ws.onmessage = async (event) => {
       const data: WsMessage = JSON.parse(event.data)
@@ -58,11 +51,11 @@ export class ChatConnection {
     }
 
     this.ws.onclose = () => {
-      this.onStatus('Disconnected')
+      this.onStatus('Disconnected from room')
     }
 
     this.ws.onerror = () => {
-      this.onStatus('Connection error')
+      this.onStatus('Connection failed')
     }
   }
 
@@ -76,9 +69,9 @@ export class ChatConnection {
 
         if (isCreator) {
           await this.keyManager.generateAndSetGroupKey()
-          this.onStatus('Room created, waiting for peers...')
+          this.onStatus('Waiting for others to join')
         } else {
-          this.onStatus('Joined room! Waiting for group key')
+          this.onStatus('Waiting for encryption key')
         }
 
         this.send({ type: 'key_announce', public_key: publicKey })
@@ -120,7 +113,7 @@ export class ChatConnection {
         if (data.peer_id && data.payload) {
           try {
             await this.keyManager.receiveGroupKey(data.peer_id, data.payload)
-            this.onStatus('Ready')
+            this.onStatus('Ready to chat')
           } catch (e) {
             console.error('Failed to receive group key:', e)
           }
@@ -140,11 +133,11 @@ export class ChatConnection {
         break
 
       case 'room_expired':
-        this.onStatus('Room has expired')
+        this.onStatus('This room has expired')
         break
 
       case 'room_full':
-        this.onStatus('Room is full (max 16 participants)')
+        this.onStatus('This room is full')
         break
     }
   }
