@@ -75,10 +75,18 @@ let myColor: PeerColor = 'blue'
 
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
+  const existingInput = document.getElementById('message-input') as HTMLInputElement | null
+  const savedValue = existingInput?.value || ''
+
   if (currentView === 'landing') {
     renderLanding(app)
   } else {
     renderChat(app)
+    const newInput = document.getElementById('message-input') as HTMLInputElement
+    if (newInput) {
+      if (savedValue) newInput.value = savedValue
+      newInput.focus()
+    }
   }
 }
 
@@ -261,6 +269,9 @@ async function handleSendMessage(): Promise<void> {
   saveMessages()
   input.value = ''
   render()
+
+  const newInput = document.getElementById('message-input') as HTMLInputElement
+  newInput?.focus()
 
   if (!DEV_MODE && connection) {
     await connection.sendMessage(text)
