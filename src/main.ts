@@ -179,7 +179,7 @@ function renderChat(app: HTMLDivElement): void {
     const el = document.getElementById('copy-room-id')
     if (el) {
       el.textContent = 'Copied!'
-      setTimeout(() => { el.textContent = 'copy the room ID' }, 1500)
+      setTimeout(() => { el.textContent = 'copy the room ID' }, 500)
     }
   })
   document.getElementById('send-message')?.addEventListener('click', handleSendMessage)
