@@ -105,11 +105,10 @@ function renderLanding(app: HTMLDivElement): void {
       <p><i>end-to-end encrypted chat</i></p>
       <hr>
       <div class="actions">
+        <input type="text" id="room-input" placeholder="room id">
+        <button id="join-room">Join</button>
+        <span class="or">or</span>
         <button id="create-room">Create Room</button>
-        <div class="join-section">
-          <input type="text" id="room-input" placeholder="room id" size="30">
-          <button id="join-room">Join</button>
-        </div>
       </div>
       ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
     </div>
@@ -163,9 +162,10 @@ function renderChat(app: HTMLDivElement): void {
 
   app.innerHTML = `
     <div class="chat">
-      <div class="chat-header">
-        <button id="leave-room">Leave</button>
-        <button id="copy-link">Copy Link</button>
+      <div class="chat-info">
+        <p>Parrhesia is a free, basic, end-to-end encrypted messaging service. Messages are encrypted on your device before being sent to the server, and can only be decrypted by participants in the room. The server never has access to your message content.</p>
+        <p>To leave or rejoin, simply close or reopen this page. To invite others, share the link or <span id="copy-room-id" class="copy-link">copy the room ID</span>. Rooms automatically close after 24 hours of inactivity.</p>
+        <p>Thank you for using Parrhesia <3</p>
       </div>
       <div class="messages" id="messages">${messagesHtml || '<p class="empty">No messages yet</p>'}</div>
       <div class="chat-input">
@@ -174,8 +174,14 @@ function renderChat(app: HTMLDivElement): void {
       </div>
     </div>
   `
-  document.getElementById('leave-room')?.addEventListener('click', handleLeaveRoom)
-  document.getElementById('copy-link')?.addEventListener('click', handleCopyLink)
+  document.getElementById('copy-room-id')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(currentRoomId)
+    const el = document.getElementById('copy-room-id')
+    if (el) {
+      el.textContent = 'Copied!'
+      setTimeout(() => { el.textContent = 'copy the room ID' }, 1500)
+    }
+  })
   document.getElementById('send-message')?.addEventListener('click', handleSendMessage)
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleSendMessage()
@@ -276,31 +282,6 @@ async function joinRoom(roomId: string): Promise<void> {
   const url = new URL(window.location.href)
   url.searchParams.set('room', roomId)
   window.history.pushState({}, '', url.toString())
-}
-
-function handleCopyLink(): void {
-  navigator.clipboard.writeText(window.location.href)
-  const btn = document.getElementById('copy-link')
-  if (btn) {
-    btn.textContent = 'Copied!'
-    setTimeout(() => { btn.textContent = 'Copy Link' }, 1500)
-  }
-}
-
-function handleLeaveRoom(): void {
-  connection?.disconnect()
-  connection = null
-  currentView = 'landing'
-  currentRoomId = ''
-  status = ''
-  messages = []
-  canSend = false
-
-  const url = new URL(window.location.href)
-  url.searchParams.delete('room')
-  window.history.pushState({}, '', url.toString())
-
-  render()
 }
 
 async function handleSendMessage(): Promise<void> {

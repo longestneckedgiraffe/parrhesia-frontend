@@ -25,16 +25,25 @@ hr {
   font-family: monospace;
 }
 
-.join-section {
-  margin-top: 0.5em;
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+
+.actions .or {
+  color: #999;
 }
 
 .actions button,
 .actions input {
-  padding: 0.5em 1em;
+  padding: 0.6em 1.2em;
   border: 1px solid #ccc;
   font-family: inherit;
   font-size: inherit;
+  transition: border-color 0.15s, background-color 0.15s;
 }
 
 .actions button {
@@ -42,8 +51,18 @@ hr {
   cursor: pointer;
 }
 
+.actions button:hover {
+  background: #f0f0f0;
+  border-color: #bbb;
+}
+
+.actions button:active {
+  background: #e8e8e8;
+}
+
 .actions input {
   background: #fff;
+  outline: none;
 }
 
 .chat {
@@ -52,25 +71,26 @@ hr {
   flex-direction: column;
 }
 
-.chat-header {
+.chat-info {
   padding-bottom: 0.75em;
   margin-bottom: 0.75em;
   border-bottom: 1px solid #ddd;
-  display: flex;
-  align-items: center;
-  gap: 1em;
+  color: #999;
+  font-style: italic;
+  line-height: 1.4;
 }
 
-.chat-header button {
-  background: none;
-  border: 1px solid #ccc;
-  padding: 0.25em 0.75em;
+.chat-info p {
+  margin: 0 0 0.75em 0;
+}
+
+.chat-info p:last-child {
+  margin-bottom: 0;
+}
+
+.copy-link {
+  text-decoration: underline;
   cursor: pointer;
-}
-
-.chat-header .info {
-  color: #666;
-  font-size: 13px;
 }
 
 .messages {
@@ -87,8 +107,6 @@ hr {
 
 .message {
   display: flex;
-  font-family: monospace;
-  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -102,6 +120,7 @@ hr {
 }
 
 .message.system .peer {
+  font-family: monospace;
   color: #2e7d32;
 }
 
@@ -110,6 +129,7 @@ hr {
 }
 
 .message.notification .peer {
+  font-family: monospace;
   color: #999;
   font-style: italic;
 }
@@ -126,13 +146,12 @@ hr {
 
 .system-toggle {
   display: flex;
-  font-family: monospace;
-  font-size: 13px;
   line-height: 1.4;
   cursor: pointer;
 }
 
 .system-toggle .peer {
+  font-family: monospace;
   width: 70px;
   flex-shrink: 0;
   text-align: right;
@@ -194,20 +213,32 @@ hr {
 
 .chat-input input {
   flex: 1;
-  padding: 0.5em;
+  padding: 0.6em;
   border: 1px solid #ccc;
   font-family: inherit;
   font-size: inherit;
+  outline: none;
 }
 
 .chat-input button {
-  padding: 0.5em 1em;
+  padding: 0.6em 1.2em;
   border: 1px solid #ccc;
   background: #fafafa;
   cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.chat-input button:hover:not(:disabled) {
+  background: #f0f0f0;
+  border-color: #bbb;
+}
+
+.chat-input button:active:not(:disabled) {
+  background: #e8e8e8;
 }
 
 .chat-input button:disabled,
 .chat-input input:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
