@@ -76,8 +76,24 @@ hr {
   margin-bottom: 0.75em;
   border-bottom: 1px solid #ddd;
   color: #999;
+  cursor: pointer;
+}
+
+.chat-info-full {
   font-style: italic;
   line-height: 1.4;
+}
+
+.chat-info-collapsed {
+  display: none;
+}
+
+.chat-info.collapsed .chat-info-full {
+  display: none;
+}
+
+.chat-info.collapsed .chat-info-collapsed {
+  display: block;
 }
 
 .chat-info p {

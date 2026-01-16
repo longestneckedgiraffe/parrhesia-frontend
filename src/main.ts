@@ -79,6 +79,7 @@ let canSend = false
 let status = ''
 let myPeerId = ''
 let myColor: PeerColor = 'blue'
+let infoCollapsed = false
 
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
@@ -162,10 +163,13 @@ function renderChat(app: HTMLDivElement): void {
 
   app.innerHTML = `
     <div class="chat">
-      <div class="chat-info">
-        <p>Parrhesia is a free, basic, end-to-end encrypted messaging service. Messages are encrypted on your device before being sent to the server, and can only be decrypted by participants in the room. The server never has access to your message content.</p>
-        <p>To leave or rejoin, simply close or reopen this page. To invite others, share the link or <span id="copy-room-id" class="copy-link">copy the room ID</span>. Rooms automatically close after 24 hours of inactivity.</p>
-        <p>Thank you for using Parrhesia <3</p>
+      <div class="chat-info${infoCollapsed ? ' collapsed' : ''}" id="chat-info">
+        <div class="chat-info-full">
+          <p>Parrhesia is a free, basic, end-to-end encrypted messaging service. Messages are encrypted on your device before being sent to the server, and can only be decrypted by participants in the room. The server never has access to your message content.</p>
+          <p>To leave or rejoin, simply close or reopen this page. To invite others, share the link or <span id="copy-room-id" class="copy-link">copy the room ID</span>. Rooms automatically close after 24 hours of inactivity.</p>
+          <p>Thank you for using Parrhesia <3</p>
+        </div>
+        <div class="chat-info-collapsed">Peers connected: ${connection?.getPeerCount() || 0}</div>
       </div>
       <div class="messages" id="messages">${messagesHtml || '<p class="empty">No messages yet</p>'}</div>
       <div class="chat-input">
@@ -174,11 +178,17 @@ function renderChat(app: HTMLDivElement): void {
       </div>
     </div>
   `
-  document.getElementById('copy-room-id')?.addEventListener('click', () => {
+  document.getElementById('chat-info')?.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).id === 'copy-room-id') return
+    infoCollapsed = !infoCollapsed
+    render()
+  })
+  document.getElementById('copy-room-id')?.addEventListener('click', (e) => {
+    e.stopPropagation()
     navigator.clipboard.writeText(currentRoomId)
     const el = document.getElementById('copy-room-id')
     if (el) {
-      el.textContent = 'Copied!'
+      el.textContent = 'copied'
       setTimeout(() => { el.textContent = 'copy the room ID' }, 500)
     }
   })
@@ -260,6 +270,7 @@ async function joinRoom(roomId: string): Promise<void> {
     },
     (_peerId, color) => {
       canSend = connection?.canSend() || false
+      infoCollapsed = true
       addNotification(color, 'has joined')
     },
     (_peerId, color) => {
