@@ -169,30 +169,8 @@ export class GroupKeyManager {
     return publicKey
   }
 
-  private computeUniqueColors(): Map<string, PeerColor> {
-    const allKeys = [this.myPublicKey, ...this.peerPublicKeys.values()].sort()
-    const colorMap = new Map<string, PeerColor>()
-    const usedColors = new Set<PeerColor>()
-
-    for (const key of allKeys) {
-      const baseColor = deriveColorFromPublicKey(key)
-      let color = baseColor
-      let offset = 0
-      while (usedColors.has(color)) {
-        offset++
-        const idx = PEER_COLORS.indexOf(baseColor)
-        color = PEER_COLORS[(idx + offset) % PEER_COLORS.length]
-      }
-      usedColors.add(color)
-      colorMap.set(key, color)
-    }
-
-    return colorMap
-  }
-
   getMyColor(): PeerColor {
-    const colorMap = this.computeUniqueColors()
-    return colorMap.get(this.myPublicKey) || 'blue'
+    return deriveColorFromPublicKey(this.myPublicKey)
   }
 
   setCreatorStatus(isCreator: boolean, creatorId: string): void {
@@ -220,8 +198,7 @@ export class GroupKeyManager {
   getPeerColor(peerId: string): PeerColor {
     const publicKey = this.peerPublicKeys.get(peerId)
     if (!publicKey) return 'blue'
-    const colorMap = this.computeUniqueColors()
-    return colorMap.get(publicKey) || 'blue'
+    return deriveColorFromPublicKey(publicKey)
   }
 
   async encryptGroupKeyForPeer(peerId: string): Promise<string> {
