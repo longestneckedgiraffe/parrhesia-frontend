@@ -23,6 +23,8 @@ hr {
   font-size: 8px;
   line-height: 1;
   font-family: monospace;
+  display: inline-block;
+  text-align: left;
 }
 
 .actions {
