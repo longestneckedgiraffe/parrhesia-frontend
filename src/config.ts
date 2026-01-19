@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://api.parrhesia.chat'
+const API_BASE = 'https://api.parrhesia.chat'
 
 export const config = {
   apiBase: API_BASE,

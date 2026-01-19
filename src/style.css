@@ -8,6 +8,7 @@ hr {
   border: none;
   border-top: 1px solid #ddd;
   margin: 1em 0;
+  width: 100%;
 }
 
 #app {
@@ -33,6 +34,22 @@ hr {
   justify-content: center;
   gap: 0.5em;
   flex-wrap: wrap;
+}
+
+.footer-links {
+  position: fixed;
+  left: 50%;
+  bottom: 1em;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.footer-links a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .actions .or {

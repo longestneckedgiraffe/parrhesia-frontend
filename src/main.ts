@@ -105,6 +105,10 @@ function renderLanding(app: HTMLDivElement): void {
         <button id="create-room">Create Room</button>
       </div>
       ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
+      <div class="footer-links">
+        <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend code</a>
+        <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend code</a>
+      </div>
     </div>
   `
   document.getElementById('create-room')?.addEventListener('click', handleCreateRoom)
