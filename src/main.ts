@@ -5,6 +5,36 @@ import type { PeerColor } from './crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber, isTofuEnabled, setTofuEnabled } from './tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
 
+function getTheme(): 'light' | 'dark' | null {
+  return localStorage.getItem('parrhesia-theme') as 'light' | 'dark' | null
+}
+
+function setTheme(theme: 'light' | 'dark' | null): void {
+  if (theme) {
+    localStorage.setItem('parrhesia-theme', theme)
+    document.documentElement.setAttribute('data-theme', theme)
+  } else {
+    localStorage.removeItem('parrhesia-theme')
+    document.documentElement.removeAttribute('data-theme')
+  }
+}
+
+function getCurrentEffectiveTheme(): 'light' | 'dark' {
+  return getTheme() || 'light'
+}
+
+function toggleTheme(): void {
+  const current = getCurrentEffectiveTheme()
+  setTheme(current === 'light' ? 'dark' : 'light')
+}
+
+function initTheme(): void {
+  const stored = getTheme()
+  if (stored) {
+    document.documentElement.setAttribute('data-theme', stored)
+  }
+}
+
 const PARRHESIA_ASCII = `
                                                                                               
                                                                                               
@@ -100,10 +130,7 @@ function render(): void {
 
 function renderLanding(app: HTMLDivElement): void {
   const tofuEnabled = isTofuEnabled()
-
-  const tofuInfo = tofuEnabled
-    ? `<p class="tofu-info">Messages are always end-to-end encrypted. TOFU adds protection against man-in-the-middle attacks by verifying peer keys. This setting is stored locally and must be enabled on each device.</p>`
-    : ''
+  const theme = getCurrentEffectiveTheme()
 
   app.innerHTML = `
     <div class="landing">
@@ -121,10 +148,12 @@ function renderLanding(app: HTMLDivElement): void {
         <input type="checkbox" id="tofu-toggle" ${tofuEnabled ? 'checked' : ''}>
         <span>Enable key verification (TOFU)</span>
       </label>
-      ${tofuInfo}
       <div class="footer-links">
         <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend code</a>
         <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend code</a>
+      </div>
+      <div class="theme-toggle">
+        <a id="theme-toggle">${theme}</a>
       </div>
     </div>
   `
@@ -132,6 +161,10 @@ function renderLanding(app: HTMLDivElement): void {
   document.getElementById('join-room')?.addEventListener('click', handleJoinRoom)
   document.getElementById('room-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
+  })
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    toggleTheme()
+    render()
   })
   document.getElementById('tofu-toggle')?.addEventListener('change', (e) => {
     setTofuEnabled((e.target as HTMLInputElement).checked)
@@ -172,7 +205,7 @@ function renderPeersList(): string {
   })
 
   if (peers.length === 0) return ''
-  return `<div class="peers-list">${peers.join(' · ')}</div>`
+  return `<div class="peers-list">${peers.join(' ')}</div>`
 }
 
 function renderKeyChangeWarnings(): string {
@@ -227,6 +260,7 @@ function renderChat(app: HTMLDivElement): void {
   const peersList = renderPeersList()
   const keyChangeWarnings = renderKeyChangeWarnings()
   const verificationPanel = renderVerificationPanel()
+  const theme = getCurrentEffectiveTheme()
 
   const messagesHtml = messages
     .map(m => {
@@ -258,11 +292,18 @@ function renderChat(app: HTMLDivElement): void {
         <button id="send-message" ${canSend ? '' : 'disabled'}>Send</button>
       </div>
     </div>
+    <div class="theme-toggle">
+      <a id="theme-toggle">${theme}</a>
+    </div>
     ${verificationPanel}
   `
   document.getElementById('send-message')?.addEventListener('click', handleSendMessage)
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleSendMessage()
+  })
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    toggleTheme()
+    render()
   })
   const messagesDiv = document.getElementById('messages')
   if (messagesDiv) messagesDiv.scrollTop = messagesDiv.scrollHeight
@@ -491,6 +532,7 @@ async function handleSendMessage(): Promise<void> {
 }
 
 async function init(): Promise<void> {
+  initTheme()
   const url = new URL(window.location.href)
   const roomId = url.searchParams.get('room')
 

@@ -1,12 +1,44 @@
+:root {
+  --bg: #fff;
+  --bg-subtle: #fafafa;
+  --bg-muted: #f5f5f5;
+  --bg-hover: #f0f0f0;
+  --bg-active: #e8e8e8;
+  --text: #000;
+  --text-muted: #666;
+  --text-faint: #999;
+  --border: #ddd;
+  --border-dark: #ccc;
+  --border-hover: #bbb;
+  --overlay: rgba(255, 255, 255, 0.7);
+}
+
+:root[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --bg-subtle: #242424;
+  --bg-muted: #2a2a2a;
+  --bg-hover: #333;
+  --bg-active: #3a3a3a;
+  --text: #e0e0e0;
+  --text-muted: #aaa;
+  --text-faint: #888;
+  --border: #444;
+  --border-dark: #555;
+  --border-hover: #666;
+  --overlay: rgba(0, 0, 0, 0.7);
+}
+
 body {
   margin: 1em;
   font-family: system-ui, sans-serif;
   font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
 }
 
 hr {
   border: none;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--border);
   margin: 1em 0;
   width: 100%;
 }
@@ -48,39 +80,52 @@ hr {
 }
 
 .footer-links a {
-  color: #666;
+  color: var(--text-muted);
   text-decoration: underline;
 }
 
+.theme-toggle {
+  position: fixed;
+  left: 1em;
+  bottom: 1em;
+}
+
+.theme-toggle a {
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .actions .or {
-  color: #999;
+  color: var(--text-faint);
 }
 
 .actions button,
 .actions input {
   padding: 0.6em 1.2em;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-dark);
   font-family: inherit;
   font-size: inherit;
   transition: border-color 0.15s, background-color 0.15s;
+  color: var(--text);
 }
 
 .actions button {
-  background: #fafafa;
+  background: var(--bg-subtle);
   cursor: pointer;
 }
 
 .actions button:hover {
-  background: #f0f0f0;
-  border-color: #bbb;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
 .actions button:active {
-  background: #e8e8e8;
+  background: var(--bg-active);
 }
 
 .actions input {
-  background: #fff;
+  background: var(--bg);
   outline: none;
 }
 
@@ -93,8 +138,8 @@ hr {
 .chat-info {
   padding-bottom: 0.75em;
   margin-bottom: 0.75em;
-  border-bottom: 1px solid #ddd;
-  color: #999;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
   cursor: pointer;
 }
 
@@ -136,7 +181,7 @@ hr {
 }
 
 .messages .empty {
-  color: #999;
+  color: var(--text-faint);
   padding: 1em;
 }
 
@@ -150,8 +195,8 @@ hr {
   flex-shrink: 0;
   text-align: right;
   padding-right: 8px;
-  color: #666;
-  border-right: 1px solid #ddd;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border);
 }
 
 .message.system .peer {
@@ -163,7 +208,7 @@ hr {
 }
 
 .message.system .text {
-  color: #999;
+  color: var(--text-faint);
   font-style: italic;
   text-align: center;
   padding-left: 0;
@@ -171,12 +216,12 @@ hr {
 }
 
 .message.notification .peer {
-  color: #999;
+  color: var(--text-faint);
   font-style: italic;
 }
 
 .message.notification .text {
-  color: #999;
+  color: var(--text-faint);
   font-style: italic;
 }
 
@@ -205,7 +250,7 @@ hr {
 .chat-input {
   margin-top: 0.75em;
   padding-top: 0.75em;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--border);
   display: flex;
   gap: 0.5em;
 }
@@ -213,27 +258,30 @@ hr {
 .chat-input input {
   flex: 1;
   padding: 0.6em;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-dark);
   font-family: inherit;
   font-size: inherit;
   outline: none;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .chat-input button {
   padding: 0.6em 1.2em;
-  border: 1px solid #ccc;
-  background: #fafafa;
+  border: 1px solid var(--border-dark);
+  background: var(--bg-subtle);
+  color: var(--text);
   cursor: pointer;
   transition: border-color 0.15s, background-color 0.15s;
 }
 
 .chat-input button:hover:not(:disabled) {
-  background: #f0f0f0;
-  border-color: #bbb;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
 .chat-input button:active:not(:disabled) {
-  background: #e8e8e8;
+  background: var(--bg-active);
 }
 
 .chat-input button:disabled,
@@ -248,7 +296,7 @@ hr {
   align-items: center;
   padding-bottom: 0.5em;
   margin-bottom: 0.5em;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--border);
 }
 
 .peers-list {
@@ -256,7 +304,7 @@ hr {
 }
 
 .status-text {
-  color: #999;
+  color: var(--text-faint);
 }
 
 .peer-item {
@@ -283,13 +331,14 @@ hr {
 .key-change-warning {
   padding: 0.5em 0;
   margin-bottom: 0.5em;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--border);
 }
 
 .warning-action {
   padding: 0.4em 0.8em;
-  border: 1px solid #ccc;
-  background: #fafafa;
+  border: 1px solid var(--border-dark);
+  background: var(--bg-subtle);
+  color: var(--text);
   cursor: pointer;
   font-size: inherit;
   font-family: inherit;
@@ -297,8 +346,8 @@ hr {
 }
 
 .warning-action:hover {
-  background: #f0f0f0;
-  border-color: #bbb;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
 .verification-overlay {
@@ -307,7 +356,7 @@ hr {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -315,8 +364,8 @@ hr {
 }
 
 .verification-panel {
-  background: #fff;
-  border: 1px solid #ddd;
+  background: var(--bg);
+  border: 1px solid var(--border);
   max-width: 360px;
   width: 90%;
   padding: 1.25em;
@@ -330,21 +379,22 @@ hr {
 
 .close-link {
   padding: 0.4em 0.8em;
-  border: 1px solid #ccc;
-  background: #fafafa;
+  border: 1px solid var(--border-dark);
+  background: var(--bg-subtle);
+  color: var(--text);
   cursor: pointer;
 }
 
 .close-link:hover {
-  background: #f0f0f0;
-  border-color: #bbb;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
 .verification-info {
-  background: #f5f5f5;
+  background: var(--bg-muted);
   padding: 0.75em;
   margin-bottom: 1em;
-  color: #666;
+  color: var(--text-muted);
   font-size: 0.9em;
   line-height: 1.4;
 }
@@ -354,8 +404,8 @@ hr {
   font-size: 1.2em;
   letter-spacing: 0.1em;
   padding: 1em;
-  background: #fafafa;
-  border: 1px solid #ddd;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
   text-align: center;
   margin-bottom: 1em;
 }
@@ -368,14 +418,15 @@ hr {
 
 .action-link {
   padding: 0.5em 1em;
-  border: 1px solid #ccc;
-  background: #fafafa;
+  border: 1px solid var(--border-dark);
+  background: var(--bg-subtle);
+  color: var(--text);
   cursor: pointer;
 }
 
 .action-link:hover {
-  background: #f0f0f0;
-  border-color: #bbb;
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
 }
 
 .verified-text {
@@ -387,7 +438,7 @@ hr {
   text-align: center;
   margin-top: 1em;
   padding: 1em;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
 }
 
 .qr-display img {
@@ -402,7 +453,7 @@ hr {
   width: 100%;
   max-height: 250px;
   background: #000;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
 }
 
 .qr-scanner .action-link {
@@ -418,7 +469,7 @@ hr {
   gap: 0.5em;
   cursor: pointer;
   margin-top: 1em;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .option-row input[type="checkbox"] {
@@ -426,8 +477,30 @@ hr {
 }
 
 .tofu-info {
-  color: #666;
+  color: var(--text-muted);
   max-width: 400px;
   margin: 1em auto;
   line-height: 1.4;
 }
+
+:root[data-theme="dark"] .color-black { color: #e0e0e0; }
+:root[data-theme="dark"] .color-gray { color: #aaaaaa; }
+:root[data-theme="dark"] .color-silver { color: #cccccc; }
+:root[data-theme="dark"] .color-maroon { color: #ff6666; }
+:root[data-theme="dark"] .color-navy { color: #6699ff; }
+:root[data-theme="dark"] .color-green { color: #66cc66; }
+:root[data-theme="dark"] .color-olive { color: #cccc66; }
+:root[data-theme="dark"] .color-purple { color: #cc66cc; }
+:root[data-theme="dark"] .color-teal { color: #66cccc; }
+
+:root[data-theme="dark"] .message.color-black .peer { color: #e0e0e0; }
+:root[data-theme="dark"] .message.color-gray .peer { color: #aaaaaa; }
+:root[data-theme="dark"] .message.color-silver .peer { color: #cccccc; }
+:root[data-theme="dark"] .message.color-maroon .peer { color: #ff6666; }
+:root[data-theme="dark"] .message.color-navy .peer { color: #6699ff; }
+:root[data-theme="dark"] .message.color-green .peer { color: #66cc66; }
+:root[data-theme="dark"] .message.color-olive .peer { color: #cccc66; }
+:root[data-theme="dark"] .message.color-purple .peer { color: #cc66cc; }
+:root[data-theme="dark"] .message.color-teal .peer { color: #66cccc; }
+
+:root[data-theme="dark"] .verified-text { color: #66cc66; }
