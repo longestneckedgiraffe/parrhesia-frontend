@@ -5,8 +5,6 @@ import type { PeerColor } from './crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber, isTofuEnabled, setTofuEnabled } from './tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
 
-const DEV_MODE = import.meta.env.DEV
-
 const PARRHESIA_ASCII = `
                                                                                               
                                                                                               
@@ -75,7 +73,6 @@ let canSend = false
 let status = ''
 let myPeerId = ''
 let myColor: PeerColor = 'blue'
-let infoCollapsed = false
 
 let showVerificationPanel = false
 let selectedPeerForVerification: string | null = null
@@ -104,6 +101,10 @@ function render(): void {
 function renderLanding(app: HTMLDivElement): void {
   const tofuEnabled = isTofuEnabled()
 
+  const tofuInfo = tofuEnabled
+    ? `<p class="tofu-info">Messages are always end-to-end encrypted. TOFU adds protection against man-in-the-middle attacks by verifying peer keys. This setting is stored locally and must be enabled on each device.</p>`
+    : ''
+
   app.innerHTML = `
     <div class="landing">
       <pre class="crow">${PARRHESIA_ASCII}</pre>
@@ -120,6 +121,7 @@ function renderLanding(app: HTMLDivElement): void {
         <input type="checkbox" id="tofu-toggle" ${tofuEnabled ? 'checked' : ''}>
         <span>Enable key verification (TOFU)</span>
       </label>
+      ${tofuInfo}
       <div class="footer-links">
         <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend code</a>
         <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend code</a>
@@ -133,34 +135,44 @@ function renderLanding(app: HTMLDivElement): void {
   })
   document.getElementById('tofu-toggle')?.addEventListener('change', (e) => {
     setTofuEnabled((e.target as HTMLInputElement).checked)
+    render()
   })
+}
+
+function shouldShowTofuUI(): boolean {
+  return isTofuEnabled()
 }
 
 function renderPeersList(): string {
   if (!connection) return ''
 
   const peerIds = connection.getPeerIds()
-  if (peerIds.length === 0) return ''
+  const showTofu = shouldShowTofuUI()
 
-  const tofuEnabled = isTofuEnabled()
+  const peers: string[] = []
 
-  const peersHtml = peerIds.map(peerId => {
+  const myPublicKey = connection.getMyPublicKey()
+  if (myPublicKey) {
+    peers.push(`<span class="color-${myColor}">${myColor} (you)</span>`)
+  }
+
+  peerIds.forEach(peerId => {
     const publicKey = connection!.getPeerPublicKey(peerId)
-    if (!publicKey) return ''
+    if (!publicKey) return
 
     const color = deriveColorFromPublicKey(publicKey)
 
-    if (tofuEnabled) {
+    if (showTofu) {
       const stored = getStoredPeerKey(currentRoomId, peerId)
-      const statusText = stored?.status === 'verified' ? '' : ' (unverified)'
-      return `<span class="peer-item color-${color}" data-peer-id="${peerId}">${color}${statusText}</span>`
+      const statusText = stored?.status === 'verified' ? ' ✓' : ''
+      peers.push(`<span class="peer-item color-${color}" data-peer-id="${peerId}">${color}${statusText}</span>`)
+    } else {
+      peers.push(`<span class="color-${color}">${color}</span>`)
     }
+  })
 
-    return `<span class="color-${color}">${color}</span>`
-  }).filter(Boolean).join(' · ')
-
-  if (!peersHtml) return ''
-  return `<p class="peers-list">${peersHtml}</p>`
+  if (peers.length === 0) return ''
+  return `<div class="peers-list">${peers.join(' · ')}</div>`
 }
 
 function renderKeyChangeWarnings(): string {
@@ -169,8 +181,8 @@ function renderKeyChangeWarnings(): string {
   const warnings = Array.from(pendingKeyChangePeers.entries()).map(([peerId, data]) => {
     return `<div class="key-change-warning">
       <span class="color-${data.color}">${data.color}</span>'s key has changed.
-      <span class="warning-action" data-action="accept" data-peer-id="${peerId}">[accept]</span>
-      <span class="warning-action" data-action="block" data-peer-id="${peerId}">[block]</span>
+      <span class="warning-action" data-action="accept" data-peer-id="${peerId}">accept</span>
+      <span class="warning-action" data-action="block" data-peer-id="${peerId}">block</span>
     </div>`
   }).join('')
 
@@ -183,7 +195,6 @@ function renderVerificationPanel(): string {
   const peerKey = connection?.getPeerPublicKey(selectedPeerForVerification)
   if (!peerKey) return ''
 
-  const color = deriveColorFromPublicKey(peerKey)
   const stored = getStoredPeerKey(currentRoomId, selectedPeerForVerification)
   const isVerified = stored?.status === 'verified'
 
@@ -191,27 +202,22 @@ function renderVerificationPanel(): string {
     <div class="verification-overlay" id="verification-overlay">
       <div class="verification-panel">
         <div class="verification-header">
-          <span>Verify <span class="color-${color}">${color}</span></span>
-          <span id="close-verification" class="close-link">[close]</span>
+          <span id="close-verification" class="close-link">Close</span>
         </div>
-        <hr>
-        <div class="verification-content">
-          <p>Safety Number:</p>
-          <div class="safety-number">${verificationSafetyNumber}</div>
-          <p class="safety-hint">Compare this number with your contact.</p>
-          <div class="verification-actions">
-            <span id="show-qr-btn" class="action-link">[show qr]</span>
-            <span id="scan-qr-btn" class="action-link">[scan qr]</span>
-            ${!isVerified ? '<span id="mark-verified-btn" class="action-link">[mark verified]</span>' : '<span class="verified-text">(verified)</span>'}
+        <div class="verification-info">Compare this number with your contact to verify the connection is secure.</div>
+        <div class="safety-number">${verificationSafetyNumber}</div>
+        <div class="verification-actions">
+          <span id="show-qr-btn" class="action-link">Show QR</span>
+          <span id="scan-qr-btn" class="action-link">Scan QR</span>
+          ${!isVerified ? '<span id="mark-verified-btn" class="action-link">Verify</span>' : '<span class="verified-text">Verified</span>'}
+        </div>
+        ${qrCodeDataUrl ? `<div class="qr-display"><img src="${qrCodeDataUrl}" alt="QR Code"></div>` : ''}
+        ${isScanning ? `
+          <div class="qr-scanner">
+            <video id="scanner-video" autoplay playsinline></video>
+            <span id="stop-scan-btn" class="action-link">Stop</span>
           </div>
-          ${qrCodeDataUrl ? `<div class="qr-display"><img src="${qrCodeDataUrl}" alt="QR Code"></div>` : ''}
-          ${isScanning ? `
-            <div class="qr-scanner">
-              <video id="scanner-video" autoplay playsinline></video>
-              <span id="stop-scan-btn" class="action-link">[stop scanning]</span>
-            </div>
-          ` : ''}
-        </div>
+        ` : ''}
       </div>
     </div>
   `
@@ -237,17 +243,14 @@ function renderChat(app: HTMLDivElement): void {
     })
     .join('')
 
+  const peerCount = connection?.getPeerCount() || 0
+  const statusText = peerCount === 0 ? 'Waiting for peers.' : ''
+
   app.innerHTML = `
     <div class="chat">
       ${keyChangeWarnings}
-      <div class="chat-info${infoCollapsed ? ' collapsed' : ''}" id="chat-info">
-        <div class="chat-info-full">
-          <p>Parrhesia is a free, basic, end-to-end encrypted messaging service. Messages are encrypted on your device before being sent to the server, and can only be decrypted by participants in the room. The server never has access to your message content.</p>
-          <p>To leave or rejoin, simply close or reopen this page. To invite others, share the link or <span id="copy-room-id" class="copy-link">copy the room ID</span>. Rooms automatically close after 24 hours of inactivity.</p>
-          ${peersList}
-          <p>Thank you for using Parrhesia <3</p>
-        </div>
-        <div class="chat-info-collapsed">Peers connected: ${connection?.getPeerCount() || 0}</div>
+      <div class="chat-header">
+        ${peersList || `<span class="status-text">${statusText}</span>`}
       </div>
       <div class="messages" id="messages">${messagesHtml || '<p class="empty">No messages yet</p>'}</div>
       <div class="chat-input">
@@ -257,20 +260,6 @@ function renderChat(app: HTMLDivElement): void {
     </div>
     ${verificationPanel}
   `
-  document.getElementById('chat-info')?.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).id === 'copy-room-id') return
-    infoCollapsed = !infoCollapsed
-    render()
-  })
-  document.getElementById('copy-room-id')?.addEventListener('click', (e) => {
-    e.stopPropagation()
-    navigator.clipboard.writeText(currentRoomId)
-    const el = document.getElementById('copy-room-id')
-    if (el) {
-      el.textContent = 'copied'
-      setTimeout(() => { el.textContent = 'copy the room ID' }, 500)
-    }
-  })
   document.getElementById('send-message')?.addEventListener('click', handleSendMessage)
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleSendMessage()
@@ -337,8 +326,8 @@ function closeVerificationPanel(): void {
 }
 
 async function showQRCode(): Promise<void> {
-  if (!connection) return
-  const myPublicKey = connection.getMyPublicKey()
+  const myPublicKey = connection?.getMyPublicKey()
+  if (!myPublicKey) return
   qrCodeDataUrl = await generateQRCode(myPublicKey)
   render()
 }
@@ -418,11 +407,6 @@ function handleKeyChange(peerId: string, color: PeerColor, oldKey: string | null
 }
 
 async function handleCreateRoom(): Promise<void> {
-  if (DEV_MODE) {
-    const fakeRoomId = 'dev-' + Math.random().toString(36).slice(2, 10)
-    await joinRoom(fakeRoomId)
-    return
-  }
   try {
     const roomId = await createRoom()
     await joinRoom(roomId)
@@ -440,10 +424,6 @@ async function handleJoinRoom(): Promise<void> {
     render()
     return
   }
-  if (DEV_MODE) {
-    await joinRoom(roomId)
-    return
-  }
   const exists = await checkRoom(roomId)
   if (!exists) {
     status = 'Room does not exist'
@@ -458,21 +438,6 @@ async function joinRoom(roomId: string): Promise<void> {
   messages = loadMessages(roomId)
   canSend = false
 
-  if (DEV_MODE) {
-    myPeerId = 'dev-user'
-    myColor = deriveColorFromPublicKey('dev-public-key')
-    canSend = true
-    currentView = 'chat'
-    const url = new URL(window.location.href)
-    url.searchParams.set('room', roomId)
-    window.history.pushState({}, '', url.toString())
-    render()
-    if (messages.length === 0) {
-      addSystemMessage('Running in development mode')
-    }
-    return
-  }
-
   connection = new ChatConnection(
     roomId,
     (peerId, color, text) => {
@@ -482,7 +447,6 @@ async function joinRoom(roomId: string): Promise<void> {
     },
     (_peerId, color) => {
       canSend = connection?.canSend() || false
-      infoCollapsed = true
       addNotification(color, 'has joined')
     },
     (_peerId, color) => {
@@ -521,7 +485,7 @@ async function handleSendMessage(): Promise<void> {
   const newInput = document.getElementById('message-input') as HTMLInputElement
   newInput?.focus()
 
-  if (!DEV_MODE && connection) {
+  if (connection) {
     await connection.sendMessage(text)
   }
 }
@@ -531,10 +495,6 @@ async function init(): Promise<void> {
   const roomId = url.searchParams.get('room')
 
   if (roomId) {
-    if (DEV_MODE) {
-      await joinRoom(roomId)
-      return
-    }
     const exists = await checkRoom(roomId)
     if (exists) {
       await joinRoom(roomId)

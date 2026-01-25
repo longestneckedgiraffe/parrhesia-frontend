@@ -166,3 +166,4 @@ export async function generateSafetyNumber(myPublicKey: string, peerPublicKey: s
 
   return groups.join(' ')
 }
+
