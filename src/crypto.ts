@@ -41,7 +41,21 @@ export async function exportPublicKey(key: CryptoKey): Promise<string> {
   return btoa(String.fromCharCode(...new Uint8Array(exported)))
 }
 
+export function isValidPublicKey(base64Key: string): boolean {
+  try {
+    const binaryString = atob(base64Key)
+    if (binaryString.length !== 65) return false
+    if (binaryString.charCodeAt(0) !== 0x04) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function importPublicKey(base64Key: string): Promise<CryptoKey> {
+  if (!isValidPublicKey(base64Key)) {
+    throw new Error('Invalid public key format')
+  }
   const binaryString = atob(base64Key)
   const bytes = new Uint8Array(binaryString.length)
   for (let i = 0; i < binaryString.length; i++) {

@@ -1,5 +1,5 @@
 import { config } from './config'
-import { GroupKeyManager, deriveColorFromPublicKey } from './crypto'
+import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
 import { checkPeerKey, storePeerKey, acceptKeyChange } from './tofu'
 
@@ -85,6 +85,10 @@ export class ChatConnection {
 
       case 'peer_key':
         if (data.peer_id && data.public_key) {
+          if (!isValidPublicKey(data.public_key)) {
+            console.error('Received invalid public key from peer', data.peer_id)
+            return
+          }
           const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
 
           if (keyCheck.status === 'key_changed') {
@@ -112,6 +116,10 @@ export class ChatConnection {
 
       case 'peer_joined':
         if (data.peer_id && data.public_key) {
+          if (!isValidPublicKey(data.public_key)) {
+            console.error('Received invalid public key from peer', data.peer_id)
+            return
+          }
           const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
 
           if (keyCheck.status === 'key_changed') {
