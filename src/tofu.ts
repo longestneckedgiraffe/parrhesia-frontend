@@ -17,7 +17,7 @@ interface TofuStore {
 const STORAGE_KEY = 'parrhesia-tofu'
 
 function getPeerLookupKey(roomId: string, peerId: string): string {
-  return `${roomId}:${peerId}`
+  return JSON.stringify([roomId, peerId])
 }
 
 function loadTofuStore(): TofuStore {

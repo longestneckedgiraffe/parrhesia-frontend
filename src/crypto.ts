@@ -20,13 +20,12 @@ const AES_PARAMS = {
   length: 256
 }
 
-export function deriveColorFromPublicKey(publicKeyBase64: string): PeerColor {
-  let hash = 0
-  for (let i = 0; i < publicKeyBase64.length; i++) {
-    hash = ((hash << 5) - hash) + publicKeyBase64.charCodeAt(i)
-    hash = hash & hash
-  }
-  return PEER_COLORS[Math.abs(hash) % PEER_COLORS.length]
+export async function deriveColorFromPublicKey(publicKeyBase64: string): Promise<PeerColor> {
+  const data = new TextEncoder().encode(publicKeyBase64)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const bytes = new Uint8Array(hashBuffer)
+  const index = bytes[0] % PEER_COLORS.length
+  return PEER_COLORS[index]
 }
 
 async function exportPrivateKey(key: CryptoKey): Promise<JsonWebKey> {
@@ -156,8 +155,10 @@ export async function decrypt(key: CryptoKey, encryptedBase64: string): Promise<
 export class GroupKeyManager {
   private keyPair: KeyPair | null = null
   private myPublicKey: string = ''
+  private myColor: PeerColor = 'blue'
   private peerSharedKeys: Map<string, CryptoKey> = new Map()
   private peerPublicKeys: Map<string, string> = new Map()
+  private peerColors: Map<string, PeerColor> = new Map()
   private groupKey: CryptoKey | null = null
   private isCreator: boolean = false
   private creatorId: string = ''
@@ -166,11 +167,12 @@ export class GroupKeyManager {
     const { keyPair, publicKey } = await getOrCreateKeyPair()
     this.keyPair = keyPair
     this.myPublicKey = publicKey
+    this.myColor = await deriveColorFromPublicKey(publicKey)
     return publicKey
   }
 
   getMyColor(): PeerColor {
-    return deriveColorFromPublicKey(this.myPublicKey)
+    return this.myColor
   }
 
   setCreatorStatus(isCreator: boolean, creatorId: string): void {
@@ -188,17 +190,17 @@ export class GroupKeyManager {
     const sharedKey = await deriveSharedKey(this.keyPair.privateKey, peerPublicKey)
     this.peerSharedKeys.set(peerId, sharedKey)
     this.peerPublicKeys.set(peerId, publicKeyBase64)
+    this.peerColors.set(peerId, await deriveColorFromPublicKey(publicKeyBase64))
   }
 
   removePeer(peerId: string): void {
     this.peerSharedKeys.delete(peerId)
     this.peerPublicKeys.delete(peerId)
+    this.peerColors.delete(peerId)
   }
 
   getPeerColor(peerId: string): PeerColor {
-    const publicKey = this.peerPublicKeys.get(peerId)
-    if (!publicKey) return 'blue'
-    return deriveColorFromPublicKey(publicKey)
+    return this.peerColors.get(peerId) || 'blue'
   }
 
   async encryptGroupKeyForPeer(peerId: string): Promise<string> {

@@ -1,6 +1,5 @@
 import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
-import { deriveColorFromPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
@@ -176,10 +175,7 @@ function renderPeersList(): string {
   }
 
   peerIds.forEach(peerId => {
-    const publicKey = connection!.getPeerPublicKey(peerId)
-    if (!publicKey) return
-
-    const color = deriveColorFromPublicKey(publicKey)
+    const color = connection!.getPeerColor(peerId)
     const stored = getStoredPeerKey(currentRoomId, peerId)
     const isVerified = stored?.status === 'verified'
     const colorClass = isVerified ? `color-${color}` : 'color-unverified'

@@ -90,7 +90,7 @@ export class ChatConnection {
           if (keyCheck.status === 'key_changed') {
             this.pendingKeyChanges.set(data.peer_id, data.public_key)
             if (this.onKeyChange) {
-              const color = deriveColorFromPublicKey(data.public_key)
+              const color = await deriveColorFromPublicKey(data.public_key)
               this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
             }
             return
@@ -117,7 +117,7 @@ export class ChatConnection {
           if (keyCheck.status === 'key_changed') {
             this.pendingKeyChanges.set(data.peer_id, data.public_key)
             if (this.onKeyChange) {
-              const color = deriveColorFromPublicKey(data.public_key)
+              const color = await deriveColorFromPublicKey(data.public_key)
               this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
             }
             return
@@ -248,6 +248,10 @@ export class ChatConnection {
 
   getPeerPublicKey(peerId: string): string | undefined {
     return this.keyManager.getPeerPublicKey(peerId)
+  }
+
+  getPeerColor(peerId: string): PeerColor {
+    return this.keyManager.getPeerColor(peerId)
   }
 
   getPeerIds(): string[] {
