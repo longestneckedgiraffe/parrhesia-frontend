@@ -124,14 +124,26 @@ export async function generateSafetyNumber(myPublicKey: string, peerPublicKey: s
   const sorted = [myPublicKey, peerPublicKey].sort()
   const combined = sorted.join('')
   const data = new TextEncoder().encode(combined)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const bytes = new Uint8Array(hashBuffer)
+  let hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  let bytes = new Uint8Array(hashBuffer)
 
+  const limit = 4294900000
   const groups: string[] = []
-  for (let i = 0; i < 6; i++) {
-    const offset = i * 4
+  let offset = 0
+
+  while (groups.length < 6) {
+    if (offset + 4 > bytes.length) {
+      hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
+      bytes = new Uint8Array(hashBuffer)
+      offset = 0
+    }
+
     const value = ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0
-    groups.push((value % 100000).toString().padStart(5, '0'))
+    offset += 4
+
+    if (value < limit) {
+      groups.push((value % 100000).toString().padStart(5, '0'))
+    }
   }
 
   return groups.join(' ')
