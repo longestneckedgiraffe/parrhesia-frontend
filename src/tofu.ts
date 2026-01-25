@@ -7,6 +7,7 @@ export interface StoredPeerKey {
   status: VerificationStatus
   firstSeen: number
   lastSeen: number
+  verifiedAt?: number
 }
 
 interface TofuStore {
@@ -15,6 +16,7 @@ interface TofuStore {
 }
 
 const STORAGE_KEY = 'parrhesia-tofu'
+const VERIFICATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
 function getPeerLookupKey(roomId: string, peerId: string): string {
   return JSON.stringify([roomId, peerId])
@@ -32,6 +34,12 @@ function loadTofuStore(): TofuStore {
 
 function saveTofuStore(store: TofuStore): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+}
+
+function isVerificationExpired(record: StoredPeerKey): boolean {
+  if (record.status !== 'verified') return false
+  if (!record.verifiedAt) return true
+  return Date.now() - record.verifiedAt > VERIFICATION_MAX_AGE_MS
 }
 
 export function getStoredPeerKey(roomId: string, peerId: string): StoredPeerKey | null {
@@ -76,6 +84,14 @@ export function checkPeerKey(roomId: string, peerId: string, publicKeyBase64: st
     const store = loadTofuStore()
     const key = getPeerLookupKey(roomId, peerId)
     store.peers[key].lastSeen = Date.now()
+
+    if (isVerificationExpired(stored)) {
+      store.peers[key].status = 'unverified'
+      store.peers[key].verifiedAt = undefined
+      saveTofuStore(store)
+      return { status: 'unverified', stored: store.peers[key], isNewKey: false }
+    }
+
     saveTofuStore(store)
     return { status: stored.status, stored, isNewKey: false }
   }
@@ -105,8 +121,10 @@ export function markAsVerified(roomId: string, peerId: string): void {
   const store = loadTofuStore()
   const key = getPeerLookupKey(roomId, peerId)
   if (store.peers[key]) {
+    const now = Date.now()
     store.peers[key].status = 'verified'
-    store.peers[key].lastSeen = Date.now()
+    store.peers[key].verifiedAt = now
+    store.peers[key].lastSeen = now
     saveTofuStore(store)
   }
 }
@@ -116,6 +134,7 @@ export function resetVerification(roomId: string, peerId: string): void {
   const key = getPeerLookupKey(roomId, peerId)
   if (store.peers[key]) {
     store.peers[key].status = 'unverified'
+    store.peers[key].verifiedAt = undefined
     saveTofuStore(store)
   }
 }
