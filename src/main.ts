@@ -2,6 +2,8 @@ import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
 import { deriveColorFromPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
+import { getStoredPeerKey, markAsVerified, generateSafetyNumber, isTofuEnabled, setTofuEnabled } from './tofu'
+import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
 
 const DEV_MODE = import.meta.env.DEV
 
@@ -75,6 +77,13 @@ let myPeerId = ''
 let myColor: PeerColor = 'blue'
 let infoCollapsed = false
 
+let showVerificationPanel = false
+let selectedPeerForVerification: string | null = null
+let verificationSafetyNumber = ''
+let qrCodeDataUrl = ''
+let isScanning = false
+let pendingKeyChangePeers: Map<string, { color: PeerColor; oldKey: string | null; newKey: string }> = new Map()
+
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
   const existingInput = document.getElementById('message-input') as HTMLInputElement | null
@@ -93,6 +102,8 @@ function render(): void {
 }
 
 function renderLanding(app: HTMLDivElement): void {
+  const tofuEnabled = isTofuEnabled()
+
   app.innerHTML = `
     <div class="landing">
       <pre class="crow">${PARRHESIA_ASCII}</pre>
@@ -105,6 +116,10 @@ function renderLanding(app: HTMLDivElement): void {
         <button id="create-room">Create Room</button>
       </div>
       ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
+      <label class="option-row">
+        <input type="checkbox" id="tofu-toggle" ${tofuEnabled ? 'checked' : ''}>
+        <span>Enable key verification (TOFU)</span>
+      </label>
       <div class="footer-links">
         <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend code</a>
         <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend code</a>
@@ -116,9 +131,97 @@ function renderLanding(app: HTMLDivElement): void {
   document.getElementById('room-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
   })
+  document.getElementById('tofu-toggle')?.addEventListener('change', (e) => {
+    setTofuEnabled((e.target as HTMLInputElement).checked)
+  })
+}
+
+function renderPeersList(): string {
+  if (!connection) return ''
+
+  const peerIds = connection.getPeerIds()
+  if (peerIds.length === 0) return ''
+
+  const tofuEnabled = isTofuEnabled()
+
+  const peersHtml = peerIds.map(peerId => {
+    const publicKey = connection!.getPeerPublicKey(peerId)
+    if (!publicKey) return ''
+
+    const color = deriveColorFromPublicKey(publicKey)
+
+    if (tofuEnabled) {
+      const stored = getStoredPeerKey(currentRoomId, peerId)
+      const statusText = stored?.status === 'verified' ? '' : ' (unverified)'
+      return `<span class="peer-item color-${color}" data-peer-id="${peerId}">${color}${statusText}</span>`
+    }
+
+    return `<span class="color-${color}">${color}</span>`
+  }).filter(Boolean).join(' · ')
+
+  if (!peersHtml) return ''
+  return `<p class="peers-list">${peersHtml}</p>`
+}
+
+function renderKeyChangeWarnings(): string {
+  if (pendingKeyChangePeers.size === 0) return ''
+
+  const warnings = Array.from(pendingKeyChangePeers.entries()).map(([peerId, data]) => {
+    return `<div class="key-change-warning">
+      <span class="color-${data.color}">${data.color}</span>'s key has changed.
+      <span class="warning-action" data-action="accept" data-peer-id="${peerId}">[accept]</span>
+      <span class="warning-action" data-action="block" data-peer-id="${peerId}">[block]</span>
+    </div>`
+  }).join('')
+
+  return warnings
+}
+
+function renderVerificationPanel(): string {
+  if (!showVerificationPanel || !selectedPeerForVerification) return ''
+
+  const peerKey = connection?.getPeerPublicKey(selectedPeerForVerification)
+  if (!peerKey) return ''
+
+  const color = deriveColorFromPublicKey(peerKey)
+  const stored = getStoredPeerKey(currentRoomId, selectedPeerForVerification)
+  const isVerified = stored?.status === 'verified'
+
+  return `
+    <div class="verification-overlay" id="verification-overlay">
+      <div class="verification-panel">
+        <div class="verification-header">
+          <span>Verify <span class="color-${color}">${color}</span></span>
+          <span id="close-verification" class="close-link">[close]</span>
+        </div>
+        <hr>
+        <div class="verification-content">
+          <p>Safety Number:</p>
+          <div class="safety-number">${verificationSafetyNumber}</div>
+          <p class="safety-hint">Compare this number with your contact.</p>
+          <div class="verification-actions">
+            <span id="show-qr-btn" class="action-link">[show qr]</span>
+            <span id="scan-qr-btn" class="action-link">[scan qr]</span>
+            ${!isVerified ? '<span id="mark-verified-btn" class="action-link">[mark verified]</span>' : '<span class="verified-text">(verified)</span>'}
+          </div>
+          ${qrCodeDataUrl ? `<div class="qr-display"><img src="${qrCodeDataUrl}" alt="QR Code"></div>` : ''}
+          ${isScanning ? `
+            <div class="qr-scanner">
+              <video id="scanner-video" autoplay playsinline></video>
+              <span id="stop-scan-btn" class="action-link">[stop scanning]</span>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `
 }
 
 function renderChat(app: HTMLDivElement): void {
+  const peersList = renderPeersList()
+  const keyChangeWarnings = renderKeyChangeWarnings()
+  const verificationPanel = renderVerificationPanel()
+
   const messagesHtml = messages
     .map(m => {
       if (m.isSystem) {
@@ -136,10 +239,12 @@ function renderChat(app: HTMLDivElement): void {
 
   app.innerHTML = `
     <div class="chat">
+      ${keyChangeWarnings}
       <div class="chat-info${infoCollapsed ? ' collapsed' : ''}" id="chat-info">
         <div class="chat-info-full">
           <p>Parrhesia is a free, basic, end-to-end encrypted messaging service. Messages are encrypted on your device before being sent to the server, and can only be decrypted by participants in the room. The server never has access to your message content.</p>
           <p>To leave or rejoin, simply close or reopen this page. To invite others, share the link or <span id="copy-room-id" class="copy-link">copy the room ID</span>. Rooms automatically close after 24 hours of inactivity.</p>
+          ${peersList}
           <p>Thank you for using Parrhesia <3</p>
         </div>
         <div class="chat-info-collapsed">Peers connected: ${connection?.getPeerCount() || 0}</div>
@@ -150,6 +255,7 @@ function renderChat(app: HTMLDivElement): void {
         <button id="send-message" ${canSend ? '' : 'disabled'}>Send</button>
       </div>
     </div>
+    ${verificationPanel}
   `
   document.getElementById('chat-info')?.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).id === 'copy-room-id') return
@@ -171,6 +277,144 @@ function renderChat(app: HTMLDivElement): void {
   })
   const messagesDiv = document.getElementById('messages')
   if (messagesDiv) messagesDiv.scrollTop = messagesDiv.scrollHeight
+
+  document.querySelectorAll('.peer-item').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      const peerId = (e.currentTarget as HTMLElement).dataset.peerId
+      if (peerId) await openVerificationPanel(peerId)
+    })
+  })
+
+  document.querySelectorAll('.warning-action').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      const target = e.currentTarget as HTMLElement
+      const action = target.dataset.action
+      const peerId = target.dataset.peerId
+      if (!peerId) return
+      if (action === 'accept') await handleAcceptKeyChange(peerId)
+      else if (action === 'block') handleRejectKeyChange(peerId)
+    })
+  })
+
+  document.getElementById('close-verification')?.addEventListener('click', closeVerificationPanel)
+  document.getElementById('show-qr-btn')?.addEventListener('click', showQRCode)
+  document.getElementById('scan-qr-btn')?.addEventListener('click', startQRScan)
+  document.getElementById('stop-scan-btn')?.addEventListener('click', stopQRScan)
+  document.getElementById('mark-verified-btn')?.addEventListener('click', handleMarkVerified)
+  document.getElementById('verification-overlay')?.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).id === 'verification-overlay') closeVerificationPanel()
+  })
+}
+
+async function openVerificationPanel(peerId: string): Promise<void> {
+  selectedPeerForVerification = peerId
+  showVerificationPanel = true
+  qrCodeDataUrl = ''
+  isScanning = false
+
+  const myPublicKey = connection?.getMyPublicKey()
+  const peerPublicKey = connection?.getPeerPublicKey(peerId)
+
+  if (myPublicKey && peerPublicKey) {
+    verificationSafetyNumber = await generateSafetyNumber(myPublicKey, peerPublicKey)
+  }
+
+  render()
+}
+
+function closeVerificationPanel(): void {
+  showVerificationPanel = false
+  selectedPeerForVerification = null
+  verificationSafetyNumber = ''
+  qrCodeDataUrl = ''
+  if (isScanning) {
+    const video = document.getElementById('scanner-video') as HTMLVideoElement
+    if (video) stopScanner(video)
+  }
+  isScanning = false
+  render()
+}
+
+async function showQRCode(): Promise<void> {
+  if (!connection) return
+  const myPublicKey = connection.getMyPublicKey()
+  qrCodeDataUrl = await generateQRCode(myPublicKey)
+  render()
+}
+
+async function startQRScan(): Promise<void> {
+  isScanning = true
+  qrCodeDataUrl = ''
+  render()
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  const video = document.getElementById('scanner-video') as HTMLVideoElement
+  if (video) {
+    try {
+      await initializeScanner(video)
+      pollForQRCode(video)
+    } catch {
+      addSystemMessage('Unable to access camera')
+      isScanning = false
+      render()
+    }
+  }
+}
+
+function pollForQRCode(video: HTMLVideoElement): void {
+  if (!isScanning) return
+
+  const result = scanQRCode(video)
+  if (result && selectedPeerForVerification) {
+    const peerPublicKey = connection?.getPeerPublicKey(selectedPeerForVerification)
+    if (peerPublicKey && result === peerPublicKey) {
+      markAsVerified(currentRoomId, selectedPeerForVerification)
+      addSystemMessage('Key verified successfully')
+      stopQRScan()
+    } else if (result) {
+      addSystemMessage('Scanned key does not match')
+      stopQRScan()
+    } else {
+      requestAnimationFrame(() => pollForQRCode(video))
+    }
+  } else {
+    requestAnimationFrame(() => pollForQRCode(video))
+  }
+}
+
+function stopQRScan(): void {
+  const video = document.getElementById('scanner-video') as HTMLVideoElement
+  if (video) stopScanner(video)
+  isScanning = false
+  render()
+}
+
+function handleMarkVerified(): void {
+  if (selectedPeerForVerification) {
+    markAsVerified(currentRoomId, selectedPeerForVerification)
+    addSystemMessage('Peer marked as verified')
+    render()
+  }
+}
+
+async function handleAcceptKeyChange(peerId: string): Promise<void> {
+  pendingKeyChangePeers.delete(peerId)
+  await connection?.acceptPeerKeyChange(peerId)
+  render()
+}
+
+function handleRejectKeyChange(peerId: string): void {
+  pendingKeyChangePeers.delete(peerId)
+  connection?.rejectPeerKeyChange(peerId)
+  addSystemMessage('Blocked peer due to key change')
+  render()
+}
+
+function handleKeyChange(peerId: string, color: PeerColor, oldKey: string | null, newKey: string): void {
+  pendingKeyChangePeers.set(peerId, { color, oldKey, newKey })
+  addSystemMessage(`${color}'s encryption key has changed`)
 }
 
 async function handleCreateRoom(): Promise<void> {
@@ -248,7 +492,8 @@ async function joinRoom(roomId: string): Promise<void> {
     (newStatus) => {
       canSend = connection?.canSend() || false
       addSystemMessage(newStatus)
-    }
+    },
+    handleKeyChange
   )
 
   currentView = 'chat'

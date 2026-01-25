@@ -1,10 +1,12 @@
 import { config } from './config'
-import { GroupKeyManager } from './crypto'
+import { GroupKeyManager, deriveColorFromPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
+import { checkPeerKey, storePeerKey, acceptKeyChange, isTofuEnabled } from './tofu'
 
 export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
 export type PeerHandler = (peerId: string, color: PeerColor) => void
 export type StatusHandler = (status: string) => void
+export type KeyChangeHandler = (peerId: string, color: PeerColor, oldKey: string | null, newKey: string) => void
 
 interface WsMessage {
   type: string
@@ -24,13 +26,16 @@ export class ChatConnection {
   private onPeerJoined: PeerHandler
   private onPeerLeft: PeerHandler
   private onStatus: StatusHandler
+  private onKeyChange?: KeyChangeHandler
+  private pendingKeyChanges: Map<string, string> = new Map()
 
   constructor(
     roomId: string,
     onMessage: MessageHandler,
     onPeerJoined: PeerHandler,
     onPeerLeft: PeerHandler,
-    onStatus: StatusHandler
+    onStatus: StatusHandler,
+    onKeyChange?: KeyChangeHandler
   ) {
     this.roomId = roomId
     this.keyManager = new GroupKeyManager()
@@ -38,6 +43,7 @@ export class ChatConnection {
     this.onPeerJoined = onPeerJoined
     this.onPeerLeft = onPeerLeft
     this.onStatus = onStatus
+    this.onKeyChange = onKeyChange
   }
 
   async connect(): Promise<void> {
@@ -79,6 +85,23 @@ export class ChatConnection {
 
       case 'peer_key':
         if (data.peer_id && data.public_key) {
+          if (isTofuEnabled()) {
+            const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
+
+            if (keyCheck.status === 'key_changed') {
+              this.pendingKeyChanges.set(data.peer_id, data.public_key)
+              if (this.onKeyChange) {
+                const color = deriveColorFromPublicKey(data.public_key)
+                this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
+              }
+              return
+            }
+
+            if (keyCheck.isNewKey) {
+              storePeerKey(this.roomId, data.peer_id, data.public_key)
+            }
+          }
+
           await this.keyManager.addPeer(data.peer_id, data.public_key)
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color)
@@ -91,6 +114,23 @@ export class ChatConnection {
 
       case 'peer_joined':
         if (data.peer_id && data.public_key) {
+          if (isTofuEnabled()) {
+            const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
+
+            if (keyCheck.status === 'key_changed') {
+              this.pendingKeyChanges.set(data.peer_id, data.public_key)
+              if (this.onKeyChange) {
+                const color = deriveColorFromPublicKey(data.public_key)
+                this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
+              }
+              return
+            }
+
+            if (keyCheck.isNewKey) {
+              storePeerKey(this.roomId, data.peer_id, data.public_key)
+            }
+          }
+
           await this.keyManager.addPeer(data.peer_id, data.public_key)
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color)
@@ -184,6 +224,46 @@ export class ChatConnection {
 
   getMyColor(): PeerColor {
     return this.keyManager.getMyColor()
+  }
+
+  async acceptPeerKeyChange(peerId: string): Promise<void> {
+    const newKey = this.pendingKeyChanges.get(peerId)
+    if (!newKey) return
+
+    acceptKeyChange(this.roomId, peerId, newKey)
+    await this.keyManager.addPeer(peerId, newKey)
+    this.pendingKeyChanges.delete(peerId)
+
+    const color = this.keyManager.getPeerColor(peerId)
+    this.onPeerJoined(peerId, color)
+
+    if (this.keyManager.hasGroupKey()) {
+      await this.sendGroupKeyToPeer(peerId)
+    }
+  }
+
+  rejectPeerKeyChange(peerId: string): void {
+    this.pendingKeyChanges.delete(peerId)
+  }
+
+  getMyPublicKey(): string {
+    return this.keyManager.getMyPublicKey()
+  }
+
+  getPeerPublicKey(peerId: string): string | undefined {
+    return this.keyManager.getPeerPublicKey(peerId)
+  }
+
+  getPeerIds(): string[] {
+    return this.keyManager.getPeerIds()
+  }
+
+  getRoomId(): string {
+    return this.roomId
+  }
+
+  hasPendingKeyChange(peerId: string): boolean {
+    return this.pendingKeyChanges.has(peerId)
   }
 }
 

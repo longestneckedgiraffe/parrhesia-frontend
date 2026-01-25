@@ -241,3 +241,152 @@ hr {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.peers-list {
+  font-style: normal;
+}
+
+.peer-item {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.color-black { color: #000000; }
+.color-gray { color: #666666; }
+.color-silver { color: #888888; }
+.color-maroon { color: #800000; }
+.color-red { color: #cc0000; }
+.color-olive { color: #808000; }
+.color-green { color: #008000; }
+.color-lime { color: #32cd32; }
+.color-navy { color: #000080; }
+.color-blue { color: #0066cc; }
+.color-teal { color: #008080; }
+.color-cyan { color: #00a0a0; }
+.color-purple { color: #800080; }
+.color-magenta { color: #cc00cc; }
+.color-orange { color: #cc6600; }
+.color-gold { color: #b8860b; }
+
+.key-change-warning {
+  padding: 0.5em 0;
+  margin-bottom: 0.5em;
+  border-bottom: 1px solid #ddd;
+}
+
+.warning-action {
+  cursor: pointer;
+  text-decoration: underline;
+  margin-left: 0.5em;
+}
+
+.verification-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.verification-panel {
+  background: #fff;
+  border: 1px solid #ddd;
+  max-width: 400px;
+  width: 90%;
+  padding: 1em;
+}
+
+.verification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.close-link {
+  cursor: pointer;
+  text-decoration: underline;
+  color: #666;
+}
+
+.verification-content p {
+  margin: 0.75em 0;
+}
+
+.safety-number {
+  font-family: monospace;
+  font-size: 1.1em;
+  letter-spacing: 0.05em;
+  padding: 0.75em;
+  background: #fafafa;
+  border: 1px solid #ddd;
+  text-align: center;
+}
+
+.safety-hint {
+  color: #666;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.verification-actions {
+  display: flex;
+  gap: 1em;
+  flex-wrap: wrap;
+}
+
+.action-link {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.verified-text {
+  color: #008000;
+  font-style: italic;
+}
+
+.qr-display {
+  text-align: center;
+  margin-top: 1em;
+  padding: 1em;
+  border: 1px solid #ddd;
+}
+
+.qr-display img {
+  max-width: 200px;
+}
+
+.qr-scanner {
+  margin-top: 1em;
+}
+
+.qr-scanner video {
+  width: 100%;
+  max-height: 250px;
+  background: #000;
+  border: 1px solid #ddd;
+}
+
+.qr-scanner .action-link {
+  display: block;
+  text-align: center;
+  margin-top: 0.5em;
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  cursor: pointer;
+  margin-top: 1em;
+  color: #666;
+}
+
+.option-row input[type="checkbox"] {
+  cursor: pointer;
+}

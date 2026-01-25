@@ -245,4 +245,12 @@ export class GroupKeyManager {
   hasPeers(): boolean {
     return this.peerSharedKeys.size > 0
   }
+
+  getMyPublicKey(): string {
+    return this.myPublicKey
+  }
+
+  getPeerPublicKey(peerId: string): string | undefined {
+    return this.peerPublicKeys.get(peerId)
+  }
 }
