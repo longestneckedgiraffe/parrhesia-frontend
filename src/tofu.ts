@@ -1,33 +1,3 @@
-const SETTINGS_KEY = 'parrhesia-settings'
-
-interface Settings {
-  tofuEnabled: boolean
-}
-
-function loadSettings(): Settings {
-  const stored = localStorage.getItem(SETTINGS_KEY)
-  if (!stored) return { tofuEnabled: false }
-  try {
-    return JSON.parse(stored)
-  } catch {
-    return { tofuEnabled: false }
-  }
-}
-
-function saveSettings(settings: Settings): void {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
-}
-
-export function isTofuEnabled(): boolean {
-  return loadSettings().tofuEnabled
-}
-
-export function setTofuEnabled(enabled: boolean): void {
-  const settings = loadSettings()
-  settings.tofuEnabled = enabled
-  saveSettings(settings)
-}
-
 export type VerificationStatus = 'unverified' | 'verified' | 'key_changed'
 
 export interface StoredPeerKey {

@@ -1,7 +1,7 @@
 import { config } from './config'
 import { GroupKeyManager, deriveColorFromPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
-import { checkPeerKey, storePeerKey, acceptKeyChange, isTofuEnabled } from './tofu'
+import { checkPeerKey, storePeerKey, acceptKeyChange } from './tofu'
 
 export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
 export type PeerHandler = (peerId: string, color: PeerColor) => void
@@ -85,21 +85,19 @@ export class ChatConnection {
 
       case 'peer_key':
         if (data.peer_id && data.public_key) {
-          if (isTofuEnabled()) {
-            const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
+          const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
 
-            if (keyCheck.status === 'key_changed') {
-              this.pendingKeyChanges.set(data.peer_id, data.public_key)
-              if (this.onKeyChange) {
-                const color = deriveColorFromPublicKey(data.public_key)
-                this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
-              }
-              return
+          if (keyCheck.status === 'key_changed') {
+            this.pendingKeyChanges.set(data.peer_id, data.public_key)
+            if (this.onKeyChange) {
+              const color = deriveColorFromPublicKey(data.public_key)
+              this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
             }
+            return
+          }
 
-            if (keyCheck.isNewKey) {
-              storePeerKey(this.roomId, data.peer_id, data.public_key)
-            }
+          if (keyCheck.isNewKey) {
+            storePeerKey(this.roomId, data.peer_id, data.public_key)
           }
 
           await this.keyManager.addPeer(data.peer_id, data.public_key)
@@ -114,21 +112,19 @@ export class ChatConnection {
 
       case 'peer_joined':
         if (data.peer_id && data.public_key) {
-          if (isTofuEnabled()) {
-            const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
+          const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
 
-            if (keyCheck.status === 'key_changed') {
-              this.pendingKeyChanges.set(data.peer_id, data.public_key)
-              if (this.onKeyChange) {
-                const color = deriveColorFromPublicKey(data.public_key)
-                this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
-              }
-              return
+          if (keyCheck.status === 'key_changed') {
+            this.pendingKeyChanges.set(data.peer_id, data.public_key)
+            if (this.onKeyChange) {
+              const color = deriveColorFromPublicKey(data.public_key)
+              this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
             }
+            return
+          }
 
-            if (keyCheck.isNewKey) {
-              storePeerKey(this.roomId, data.peer_id, data.public_key)
-            }
+          if (keyCheck.isNewKey) {
+            storePeerKey(this.roomId, data.peer_id, data.public_key)
           }
 
           await this.keyManager.addPeer(data.peer_id, data.public_key)

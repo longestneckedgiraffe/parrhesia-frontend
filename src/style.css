@@ -225,6 +225,8 @@ hr {
   font-style: italic;
 }
 
+.message.color-unverified .peer { color: #999999; }
+.message.color-unverified .text { color: #999999; }
 .message.color-black .peer { color: #000000; }
 .message.color-gray .peer { color: #666666; }
 .message.color-silver .peer { color: #888888; }
@@ -311,6 +313,7 @@ hr {
   cursor: pointer;
 }
 
+.color-unverified { color: #999999; }
 .color-black { color: #000000; }
 .color-gray { color: #666666; }
 .color-silver { color: #888888; }
@@ -462,27 +465,8 @@ hr {
   margin-top: 0.5em;
 }
 
-.option-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5em;
-  cursor: pointer;
-  margin-top: 1em;
-  color: var(--text-muted);
-}
 
-.option-row input[type="checkbox"] {
-  cursor: pointer;
-}
-
-.tofu-info {
-  color: var(--text-muted);
-  max-width: 400px;
-  margin: 1em auto;
-  line-height: 1.4;
-}
-
+:root[data-theme="dark"] .color-unverified { color: #777777; }
 :root[data-theme="dark"] .color-black { color: #e0e0e0; }
 :root[data-theme="dark"] .color-gray { color: #aaaaaa; }
 :root[data-theme="dark"] .color-silver { color: #cccccc; }
@@ -493,6 +477,8 @@ hr {
 :root[data-theme="dark"] .color-purple { color: #cc66cc; }
 :root[data-theme="dark"] .color-teal { color: #66cccc; }
 
+:root[data-theme="dark"] .message.color-unverified .peer { color: #777777; }
+:root[data-theme="dark"] .message.color-unverified .text { color: #777777; }
 :root[data-theme="dark"] .message.color-black .peer { color: #e0e0e0; }
 :root[data-theme="dark"] .message.color-gray .peer { color: #aaaaaa; }
 :root[data-theme="dark"] .message.color-silver .peer { color: #cccccc; }

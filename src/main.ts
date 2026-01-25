@@ -2,7 +2,7 @@ import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
 import { deriveColorFromPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
-import { getStoredPeerKey, markAsVerified, generateSafetyNumber, isTofuEnabled, setTofuEnabled } from './tofu'
+import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
 
 function getTheme(): 'light' | 'dark' | null {
@@ -61,6 +61,7 @@ interface Message {
   isMine: boolean
   isSystem?: boolean
   isNotification?: boolean
+  verified?: boolean
 }
 
 let currentRoomId = ''
@@ -90,8 +91,8 @@ function addSystemMessage(text: string): void {
   render()
 }
 
-function addNotification(color: PeerColor, text: string): void {
-  messages.push({ peerId: 'notification', color, text, isMine: false, isNotification: true })
+function addNotification(color: PeerColor, text: string, verified?: boolean): void {
+  messages.push({ peerId: 'notification', color, text, isMine: false, isNotification: true, verified })
   saveMessages()
   render()
 }
@@ -129,7 +130,6 @@ function render(): void {
 }
 
 function renderLanding(app: HTMLDivElement): void {
-  const tofuEnabled = isTofuEnabled()
   const theme = getCurrentEffectiveTheme()
 
   app.innerHTML = `
@@ -144,10 +144,6 @@ function renderLanding(app: HTMLDivElement): void {
         <button id="create-room">Create Room</button>
       </div>
       ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
-      <label class="option-row">
-        <input type="checkbox" id="tofu-toggle" ${tofuEnabled ? 'checked' : ''}>
-        <span>Enable key verification (TOFU)</span>
-      </label>
       <div class="footer-links">
         <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend code</a>
         <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend code</a>
@@ -166,22 +162,12 @@ function renderLanding(app: HTMLDivElement): void {
     toggleTheme()
     render()
   })
-  document.getElementById('tofu-toggle')?.addEventListener('change', (e) => {
-    setTofuEnabled((e.target as HTMLInputElement).checked)
-    render()
-  })
-}
-
-function shouldShowTofuUI(): boolean {
-  return isTofuEnabled()
 }
 
 function renderPeersList(): string {
   if (!connection) return ''
 
   const peerIds = connection.getPeerIds()
-  const showTofu = shouldShowTofuUI()
-
   const peers: string[] = []
 
   const myPublicKey = connection.getMyPublicKey()
@@ -194,14 +180,11 @@ function renderPeersList(): string {
     if (!publicKey) return
 
     const color = deriveColorFromPublicKey(publicKey)
-
-    if (showTofu) {
-      const stored = getStoredPeerKey(currentRoomId, peerId)
-      const statusText = stored?.status === 'verified' ? ' ✓' : ''
-      peers.push(`<span class="peer-item color-${color}" data-peer-id="${peerId}">${color}${statusText}</span>`)
-    } else {
-      peers.push(`<span class="color-${color}">${color}</span>`)
-    }
+    const stored = getStoredPeerKey(currentRoomId, peerId)
+    const isVerified = stored?.status === 'verified'
+    const colorClass = isVerified ? `color-${color}` : 'color-unverified'
+    const displayName = isVerified ? color : 'unverified'
+    peers.push(`<span class="peer-item ${colorClass}" data-peer-id="${peerId}">${displayName}</span>`)
   })
 
   if (peers.length === 0) return ''
@@ -268,11 +251,14 @@ function renderChat(app: HTMLDivElement): void {
         return `<div class="message system"><span class="text">${m.text}</span></div>`
       }
       if (m.isNotification) {
-        const colorClass = `color-${m.color}`
-        return `<div class="message notification ${colorClass}"><span class="peer">${m.color}</span><span class="text">${m.text}</span></div>`
+        const isVerified = m.verified ?? false
+        const colorClass = isVerified ? `color-${m.color}` : 'color-unverified'
+        const peerLabel = isVerified ? m.color : 'unverified'
+        return `<div class="message notification ${colorClass}"><span class="peer">${peerLabel}</span><span class="text">${m.text}</span></div>`
       }
-      const colorClass = `color-${m.color}`
-      const peerName = m.isMine ? myColor : m.color
+      const isVerified = m.isMine || (m.verified ?? false)
+      const colorClass = isVerified ? `color-${m.color}` : 'color-unverified'
+      const peerName = m.isMine ? myColor : (isVerified ? m.color : 'unverified')
       return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
     })
     .join('')
@@ -482,17 +468,23 @@ async function joinRoom(roomId: string): Promise<void> {
   connection = new ChatConnection(
     roomId,
     (peerId, color, text) => {
-      messages.push({ peerId, color, text, isMine: false })
+      const stored = getStoredPeerKey(roomId, peerId)
+      const verified = stored?.status === 'verified'
+      messages.push({ peerId, color, text, isMine: false, verified })
       saveMessages()
       render()
     },
-    (_peerId, color) => {
+    (peerId, color) => {
       canSend = connection?.canSend() || false
-      addNotification(color, 'has joined')
+      const stored = getStoredPeerKey(roomId, peerId)
+      const verified = stored?.status === 'verified'
+      addNotification(color, 'has joined', verified)
     },
-    (_peerId, color) => {
+    (peerId, color) => {
       canSend = connection?.canSend() || false
-      addNotification(color, 'has left')
+      const stored = getStoredPeerKey(roomId, peerId)
+      const verified = stored?.status === 'verified'
+      addNotification(color, 'has left', verified)
     },
     (newStatus) => {
       canSend = connection?.canSend() || false
