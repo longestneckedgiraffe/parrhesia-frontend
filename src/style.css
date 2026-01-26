@@ -402,6 +402,33 @@ hr {
   line-height: 1.4;
 }
 
+.password-input {
+  width: 100%;
+  padding: 0.6em;
+  margin-bottom: 0.75em;
+  border: 1px solid var(--border-dark);
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.password-input:focus {
+  outline: none;
+  border-color: var(--border-hover);
+}
+
+.password-error {
+  color: #cc0000;
+  font-size: 0.9em;
+  margin-bottom: 0.75em;
+}
+
+:root[data-theme="dark"] .password-error {
+  color: #ff6666;
+}
+
 .safety-number {
   font-family: monospace;
   font-size: 1.2em;
@@ -490,3 +517,38 @@ hr {
 :root[data-theme="dark"] .message.color-teal .peer { color: #66cccc; }
 
 :root[data-theme="dark"] .verified-text { color: #66cc66; }
+
+.sandbox {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.sandbox-controls {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+  padding: 1em;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1em;
+}
+
+.sandbox-controls select {
+  padding: 0.5em;
+  border: 1px solid var(--border-dark);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.sandbox-controls a {
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sandbox-preview {
+  padding: 1em;
+  border: 1px dashed var(--border);
+  min-height: 400px;
+}

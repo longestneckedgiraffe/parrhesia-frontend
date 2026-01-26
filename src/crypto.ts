@@ -20,6 +20,94 @@ const AES_PARAMS = {
   length: 256
 }
 
+const PBKDF2_ITERATIONS = 600000
+const STORAGE_KEY = 'parrhesia-keypair'
+const WRAPPED_STORAGE_KEY = 'parrhesia-keypair-wrapped'
+
+interface WrappedKeyData {
+  wrappedKey: string
+  salt: string
+  iv: string
+  publicKey: string
+}
+
+async function deriveWrappingKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const passwordKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  )
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    passwordKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['wrapKey', 'unwrapKey']
+  )
+}
+
+export async function saveKeyPairWithPassword(keyPair: KeyPair, publicKeyBase64: string, password: string): Promise<void> {
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const wrappingKey = await deriveWrappingKey(password, salt)
+
+  const wrappedKey = await crypto.subtle.wrapKey('jwk', keyPair.privateKey, wrappingKey, { name: 'AES-GCM', iv })
+
+  const data: WrappedKeyData = {
+    wrappedKey: btoa(String.fromCharCode(...new Uint8Array(wrappedKey))),
+    salt: btoa(String.fromCharCode(...salt)),
+    iv: btoa(String.fromCharCode(...iv)),
+    publicKey: publicKeyBase64
+  }
+
+  localStorage.removeItem(STORAGE_KEY)
+  localStorage.setItem(WRAPPED_STORAGE_KEY, JSON.stringify(data))
+}
+
+export async function loadKeyPairWithPassword(password: string): Promise<{ keyPair: KeyPair; publicKey: string } | null> {
+  const stored = localStorage.getItem(WRAPPED_STORAGE_KEY)
+  if (!stored) return null
+
+  try {
+    const data: WrappedKeyData = JSON.parse(stored)
+
+    const wrappedKey = Uint8Array.from(atob(data.wrappedKey), c => c.charCodeAt(0))
+    const salt = Uint8Array.from(atob(data.salt), c => c.charCodeAt(0))
+    const iv = Uint8Array.from(atob(data.iv), c => c.charCodeAt(0))
+
+    const wrappingKey = await deriveWrappingKey(password, salt)
+
+    const privateKey = await crypto.subtle.unwrapKey(
+      'jwk',
+      wrappedKey,
+      wrappingKey,
+      { name: 'AES-GCM', iv },
+      ECDH_PARAMS,
+      true,
+      ['deriveKey']
+    )
+
+    const publicKey = await importPublicKey(data.publicKey)
+
+    return {
+      keyPair: { publicKey, privateKey },
+      publicKey: data.publicKey
+    }
+  } catch {
+    return null
+  }
+}
+
+export function isKeyPasswordProtected(): boolean {
+  return localStorage.getItem(WRAPPED_STORAGE_KEY) !== null
+}
+
+export function hasStoredKeys(): boolean {
+  return localStorage.getItem(STORAGE_KEY) !== null || localStorage.getItem(WRAPPED_STORAGE_KEY) !== null
+}
+
 export async function deriveColorFromPublicKey(publicKeyBase64: string): Promise<PeerColor> {
   const data = new TextEncoder().encode(publicKeyBase64)
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
@@ -74,14 +162,14 @@ async function generateKeyPair(): Promise<KeyPair> {
 
 async function saveKeyPairToStorage(keyPair: KeyPair, publicKeyBase64: string): Promise<void> {
   const privateJwk = await exportPrivateKey(keyPair.privateKey)
-  localStorage.setItem('parrhesia-keypair', JSON.stringify({
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
     privateKey: privateJwk,
     publicKey: publicKeyBase64
   }))
 }
 
 async function loadKeyPairFromStorage(): Promise<{ keyPair: KeyPair; publicKey: string } | null> {
-  const stored = localStorage.getItem('parrhesia-keypair')
+  const stored = localStorage.getItem(STORAGE_KEY)
   if (!stored) return null
 
   try {
@@ -93,18 +181,31 @@ async function loadKeyPairFromStorage(): Promise<{ keyPair: KeyPair; publicKey: 
       publicKey: data.publicKey
     }
   } catch {
-    localStorage.removeItem('parrhesia-keypair')
+    localStorage.removeItem(STORAGE_KEY)
     return null
   }
 }
 
-export async function getOrCreateKeyPair(): Promise<{ keyPair: KeyPair; publicKey: string }> {
+export async function getOrCreateKeyPair(password?: string): Promise<{ keyPair: KeyPair; publicKey: string }> {
+  if (isKeyPasswordProtected()) {
+    if (!password) throw new Error('Password required')
+    const stored = await loadKeyPairWithPassword(password)
+    if (!stored) throw new Error('Invalid password')
+    return stored
+  }
+
   const stored = await loadKeyPairFromStorage()
   if (stored) return stored
 
   const keyPair = await generateKeyPair()
   const publicKey = await exportPublicKey(keyPair.publicKey)
-  await saveKeyPairToStorage(keyPair, publicKey)
+
+  if (password) {
+    await saveKeyPairWithPassword(keyPair, publicKey, password)
+  } else {
+    await saveKeyPairToStorage(keyPair, publicKey)
+  }
+
   return { keyPair, publicKey }
 }
 
@@ -177,8 +278,8 @@ export class GroupKeyManager {
   private isCreator: boolean = false
   private creatorId: string = ''
 
-  async initialize(): Promise<string> {
-    const { keyPair, publicKey } = await getOrCreateKeyPair()
+  async initialize(password?: string): Promise<string> {
+    const { keyPair, publicKey } = await getOrCreateKeyPair(password)
     this.keyPair = keyPair
     this.myPublicKey = publicKey
     this.myColor = await deriveColorFromPublicKey(publicKey)

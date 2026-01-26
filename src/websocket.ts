@@ -46,8 +46,8 @@ export class ChatConnection {
     this.onKeyChange = onKeyChange
   }
 
-  async connect(): Promise<void> {
-    const publicKey = await this.keyManager.initialize()
+  async connect(password?: string): Promise<void> {
+    const publicKey = await this.keyManager.initialize(password)
     const wsUrl = config.endpoints.websocket(this.roomId)
     this.ws = new WebSocket(wsUrl)
 

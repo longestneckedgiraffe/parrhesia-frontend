@@ -1,6 +1,7 @@
 import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
 import type { PeerColor } from './crypto'
+import { isKeyPasswordProtected, hasStoredKeys } from './crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
 
@@ -111,6 +112,115 @@ let qrCodeDataUrl = ''
 let isScanning = false
 let pendingKeyChangePeers: Map<string, { color: PeerColor; oldKey: string | null; newKey: string }> = new Map()
 
+let showPasswordModal = false
+let passwordModalMode: 'setup' | 'unlock' = 'setup'
+let passwordError = ''
+let pendingRoomId: string | null = null
+
+function renderPasswordModal(): string {
+  if (!showPasswordModal) return ''
+
+  const isSetup = passwordModalMode === 'setup'
+  const description = isSetup
+    ? 'Optionally add a password to encrypt your private keys. This protects them if your device is compromised.'
+    : 'Enter your password to unlock your encrypted keys.'
+
+  return `
+    <div class="verification-overlay" id="password-overlay">
+      <div class="verification-panel">
+        <div class="verification-header">
+          <span id="close-password-modal" class="close-link">${isSetup ? 'Skip' : 'Cancel'}</span>
+        </div>
+        <div class="verification-info">${description}</div>
+        <input type="password" id="password-input" class="password-input" placeholder="Enter password" autofocus>
+        ${isSetup ? '<input type="password" id="password-confirm" class="password-input" placeholder="Confirm password">' : ''}
+        ${passwordError ? `<div class="password-error">${passwordError}</div>` : ''}
+        <div class="verification-actions">
+          <span id="password-submit" class="action-link">${isSetup ? 'Set Password' : 'Unlock'}</span>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function setupPasswordModalListeners(): void {
+  document.getElementById('close-password-modal')?.addEventListener('click', handlePasswordModalClose)
+  document.getElementById('password-submit')?.addEventListener('click', handlePasswordSubmit)
+  document.getElementById('password-input')?.addEventListener('keypress', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') {
+      if (passwordModalMode === 'setup') {
+        document.getElementById('password-confirm')?.focus()
+      } else {
+        handlePasswordSubmit()
+      }
+    }
+  })
+  document.getElementById('password-confirm')?.addEventListener('keypress', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') handlePasswordSubmit()
+  })
+}
+
+async function handlePasswordModalClose(): Promise<void> {
+  if (passwordModalMode === 'setup' && pendingRoomId) {
+    showPasswordModal = false
+    passwordError = ''
+    await joinRoom(pendingRoomId, undefined)
+    pendingRoomId = null
+  } else {
+    showPasswordModal = false
+    passwordError = ''
+    pendingRoomId = null
+    render()
+  }
+}
+
+async function handlePasswordSubmit(): Promise<void> {
+  const passwordInput = document.getElementById('password-input') as HTMLInputElement
+  const password = passwordInput.value
+
+  if (!password) {
+    passwordError = 'Password is required'
+    render()
+    return
+  }
+
+  if (passwordModalMode === 'setup') {
+    const confirmInput = document.getElementById('password-confirm') as HTMLInputElement
+    const confirm = confirmInput.value
+
+    if (password !== confirm) {
+      passwordError = 'Passwords do not match'
+      render()
+      return
+    }
+
+    if (password.length < 8) {
+      passwordError = 'Password must be at least 8 characters'
+      render()
+      return
+    }
+  }
+
+  showPasswordModal = false
+  passwordError = ''
+
+  if (pendingRoomId) {
+    try {
+      await joinRoom(pendingRoomId, password)
+    } catch (e) {
+      if (passwordModalMode === 'unlock') {
+        passwordError = 'Invalid password'
+        showPasswordModal = true
+        render()
+        return
+      }
+      status = 'Failed to join room'
+      render()
+    }
+    pendingRoomId = null
+  }
+}
+
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
   const existingInput = document.getElementById('message-input') as HTMLInputElement | null
@@ -125,6 +235,12 @@ function render(): void {
       if (savedValue) newInput.value = savedValue
       newInput.focus()
     }
+  }
+
+  const passwordModal = renderPasswordModal()
+  if (passwordModal) {
+    app.insertAdjacentHTML('beforeend', passwordModal)
+    setupPasswordModalListeners()
   }
 }
 
@@ -432,7 +548,20 @@ function handleKeyChange(peerId: string, color: PeerColor, oldKey: string | null
 async function handleCreateRoom(): Promise<void> {
   try {
     const roomId = await createRoom()
-    await joinRoom(roomId)
+
+    if (isKeyPasswordProtected()) {
+      pendingRoomId = roomId
+      passwordModalMode = 'unlock'
+      showPasswordModal = true
+      render()
+    } else if (!hasStoredKeys()) {
+      pendingRoomId = roomId
+      passwordModalMode = 'setup'
+      showPasswordModal = true
+      render()
+    } else {
+      await joinRoom(roomId, undefined)
+    }
   } catch {
     status = 'Unable to create room'
     render()
@@ -453,10 +582,23 @@ async function handleJoinRoom(): Promise<void> {
     render()
     return
   }
-  await joinRoom(roomId)
+
+  if (isKeyPasswordProtected()) {
+    pendingRoomId = roomId
+    passwordModalMode = 'unlock'
+    showPasswordModal = true
+    render()
+  } else if (!hasStoredKeys()) {
+    pendingRoomId = roomId
+    passwordModalMode = 'setup'
+    showPasswordModal = true
+    render()
+  } else {
+    await joinRoom(roomId, undefined)
+  }
 }
 
-async function joinRoom(roomId: string): Promise<void> {
+async function joinRoom(roomId: string, password?: string): Promise<void> {
   currentRoomId = roomId
   messages = loadMessages(roomId)
   canSend = false
@@ -492,7 +634,7 @@ async function joinRoom(roomId: string): Promise<void> {
   currentView = 'chat'
   render()
 
-  await connection.connect()
+  await connection.connect(password)
   myPeerId = connection.getPeerId()
   myColor = connection.getMyColor()
 
@@ -519,9 +661,268 @@ async function handleSendMessage(): Promise<void> {
   }
 }
 
+const SANDBOX_COMPONENTS = [
+  'landing',
+  'chat-empty',
+  'chat-with-messages',
+  'chat-with-peers',
+  'password-setup',
+  'password-unlock',
+  'password-error',
+  'verification-panel',
+  'verification-verified',
+  'key-change-warning'
+] as const
+
+type SandboxComponent = typeof SANDBOX_COMPONENTS[number]
+
+let sandboxComponent: SandboxComponent = 'landing'
+
+function isLocalhost(): boolean {
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+}
+
+function renderSandbox(): void {
+  const app = document.querySelector<HTMLDivElement>('#app')!
+  const theme = getCurrentEffectiveTheme()
+
+  const options = SANDBOX_COMPONENTS.map(c =>
+    `<option value="${c}" ${c === sandboxComponent ? 'selected' : ''}>${c}</option>`
+  ).join('')
+
+  const componentHtml = renderSandboxComponent(sandboxComponent)
+
+  app.innerHTML = `
+    <div class="sandbox">
+      <div class="sandbox-controls">
+        <select id="sandbox-select">${options}</select>
+        <a id="theme-toggle">${theme}</a>
+        <a href="/">exit</a>
+      </div>
+      <div class="sandbox-preview">
+        ${componentHtml}
+      </div>
+    </div>
+  `
+
+  document.getElementById('sandbox-select')?.addEventListener('change', (e) => {
+    sandboxComponent = (e.target as HTMLSelectElement).value as SandboxComponent
+    renderSandbox()
+  })
+
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    toggleTheme()
+    renderSandbox()
+  })
+}
+
+function renderSandboxComponent(component: SandboxComponent): string {
+  const theme = getCurrentEffectiveTheme()
+
+  switch (component) {
+    case 'landing':
+      return `
+        <div class="landing">
+          <pre class="crow">${PARRHESIA_ASCII}</pre>
+          <p><i>end-to-end encrypted chat</i></p>
+          <hr>
+          <div class="actions">
+            <input type="text" id="room-input" placeholder="room id">
+            <button>Join</button>
+            <span class="or">or</span>
+            <button>Create Room</button>
+          </div>
+          <div class="footer-links">
+            <a href="#">frontend code</a>
+            <a href="#">backend code</a>
+          </div>
+          <div class="theme-toggle">
+            <a>${theme}</a>
+          </div>
+        </div>
+      `
+
+    case 'chat-empty':
+      return `
+        <div class="chat">
+          <div class="chat-header">
+            <span class="status-text">Waiting for peers.</span>
+          </div>
+          <div class="messages"><p class="empty">No messages yet</p></div>
+          <div class="chat-input">
+            <input type="text" placeholder="Type a message..." disabled>
+            <button disabled>Send</button>
+          </div>
+        </div>
+      `
+
+    case 'chat-with-messages':
+      return `
+        <div class="chat">
+          <div class="chat-header">
+            <div class="peers-list">
+              <span class="color-blue">blue (you)</span>
+              <span class="color-green">green</span>
+              <span class="color-unverified">unverified</span>
+            </div>
+          </div>
+          <div class="messages">
+            <div class="message system"><span class="text">Waiting for others to join</span></div>
+            <div class="message notification color-green"><span class="peer">green</span><span class="text">has joined</span></div>
+            <div class="message color-green"><span class="peer">green</span><span class="text">Hello there!</span></div>
+            <div class="message color-blue"><span class="peer">blue</span><span class="text">Hey, how are you?</span></div>
+            <div class="message notification color-unverified"><span class="peer">unverified</span><span class="text">has joined</span></div>
+            <div class="message color-unverified"><span class="peer">unverified</span><span class="text">Hi everyone!</span></div>
+          </div>
+          <div class="chat-input">
+            <input type="text" placeholder="Type a message...">
+            <button>Send</button>
+          </div>
+        </div>
+      `
+
+    case 'chat-with-peers':
+      return `
+        <div class="chat">
+          <div class="chat-header">
+            <div class="peers-list">
+              <span class="color-blue">blue (you)</span>
+              <span class="peer-item color-green">green</span>
+              <span class="peer-item color-red">red</span>
+              <span class="peer-item color-unverified">unverified</span>
+            </div>
+          </div>
+          <div class="messages"><p class="empty">No messages yet</p></div>
+          <div class="chat-input">
+            <input type="text" placeholder="Type a message...">
+            <button>Send</button>
+          </div>
+        </div>
+      `
+
+    case 'password-setup':
+      return `
+        <div class="verification-overlay" style="position: relative; height: 400px;">
+          <div class="verification-panel">
+            <div class="verification-header">
+              <span class="close-link">Skip</span>
+            </div>
+            <div class="verification-info">Optionally add a password to encrypt your private keys. This protects them if your device is compromised.</div>
+            <input type="password" class="password-input" placeholder="Enter password">
+            <input type="password" class="password-input" placeholder="Confirm password">
+            <div class="verification-actions">
+              <span class="action-link">Set Password</span>
+            </div>
+          </div>
+        </div>
+      `
+
+    case 'password-unlock':
+      return `
+        <div class="verification-overlay" style="position: relative; height: 300px;">
+          <div class="verification-panel">
+            <div class="verification-header">
+              <span class="close-link">Cancel</span>
+            </div>
+            <div class="verification-info">Enter your password to unlock your encrypted keys.</div>
+            <input type="password" class="password-input" placeholder="Enter password">
+            <div class="verification-actions">
+              <span class="action-link">Unlock</span>
+            </div>
+          </div>
+        </div>
+      `
+
+    case 'password-error':
+      return `
+        <div class="verification-overlay" style="position: relative; height: 350px;">
+          <div class="verification-panel">
+            <div class="verification-header">
+              <span class="close-link">Cancel</span>
+            </div>
+            <div class="verification-info">Enter your password to unlock your encrypted keys.</div>
+            <input type="password" class="password-input" placeholder="Enter password">
+            <div class="password-error">Invalid password</div>
+            <div class="verification-actions">
+              <span class="action-link">Unlock</span>
+            </div>
+          </div>
+        </div>
+      `
+
+    case 'verification-panel':
+      return `
+        <div class="verification-overlay" style="position: relative; height: 350px;">
+          <div class="verification-panel">
+            <div class="verification-header">
+              <span class="close-link">Close</span>
+            </div>
+            <div class="verification-info">Compare this number with your contact to verify the connection is secure.</div>
+            <div class="safety-number">12345 67890 11121 31415 16171 81920</div>
+            <div class="verification-actions">
+              <span class="action-link">Show QR</span>
+              <span class="action-link">Scan QR</span>
+              <span class="action-link">Verify</span>
+            </div>
+          </div>
+        </div>
+      `
+
+    case 'verification-verified':
+      return `
+        <div class="verification-overlay" style="position: relative; height: 350px;">
+          <div class="verification-panel">
+            <div class="verification-header">
+              <span class="close-link">Close</span>
+            </div>
+            <div class="verification-info">Compare this number with your contact to verify the connection is secure.</div>
+            <div class="safety-number">12345 67890 11121 31415 16171 81920</div>
+            <div class="verification-actions">
+              <span class="action-link">Show QR</span>
+              <span class="action-link">Scan QR</span>
+              <span class="verified-text">Verified</span>
+            </div>
+          </div>
+        </div>
+      `
+
+    case 'key-change-warning':
+      return `
+        <div class="chat">
+          <div class="key-change-warning">
+            <span class="color-green">green</span>'s key has changed.
+            <span class="warning-action">accept</span>
+            <span class="warning-action">block</span>
+          </div>
+          <div class="chat-header">
+            <div class="peers-list">
+              <span class="color-blue">blue (you)</span>
+            </div>
+          </div>
+          <div class="messages">
+            <div class="message system"><span class="text">green's encryption key has changed</span></div>
+          </div>
+          <div class="chat-input">
+            <input type="text" placeholder="Type a message..." disabled>
+            <button disabled>Send</button>
+          </div>
+        </div>
+      `
+
+    default:
+      return '<p>Unknown component</p>'
+  }
+}
+
 async function init(): Promise<void> {
   initTheme()
   const url = new URL(window.location.href)
+
+  if (url.pathname === '/sandbox' && isLocalhost()) {
+    renderSandbox()
+    return
+  }
+
   const roomId = url.searchParams.get('room')
 
   if (roomId) {
