@@ -4,7 +4,7 @@ import type { PeerColor } from './crypto'
 import { checkPeerKey, storePeerKey } from './tofu'
 
 export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
-export type PeerHandler = (peerId: string, color: PeerColor) => void
+export type PeerHandler = (peerId: string, color: PeerColor, publicKey?: string) => void
 export type StatusHandler = (status: string) => void
 export type KeyChangeHandler = (peerId: string, color: PeerColor) => void
 
@@ -104,7 +104,7 @@ export class ChatConnection {
 
           await this.keyManager.addPeer(data.peer_id, data.public_key)
           const color = this.keyManager.getPeerColor(data.peer_id)
-          this.onPeerJoined(data.peer_id, color)
+          this.onPeerJoined(data.peer_id, color, data.public_key)
 
           if (this.keyManager.hasGroupKey()) {
             await this.sendGroupKeyToPeer(data.peer_id)
@@ -134,7 +134,7 @@ export class ChatConnection {
 
           await this.keyManager.addPeer(data.peer_id, data.public_key)
           const color = this.keyManager.getPeerColor(data.peer_id)
-          this.onPeerJoined(data.peer_id, color)
+          this.onPeerJoined(data.peer_id, color, data.public_key)
 
           if (this.keyManager.hasGroupKey()) {
             await this.sendGroupKeyToPeer(data.peer_id)
@@ -145,8 +145,9 @@ export class ChatConnection {
       case 'peer_left':
         if (data.peer_id) {
           const color = this.keyManager.getPeerColor(data.peer_id)
+          const publicKey = this.keyManager.getPeerPublicKey(data.peer_id)
           this.keyManager.removePeer(data.peer_id)
-          this.onPeerLeft(data.peer_id, color)
+          this.onPeerLeft(data.peer_id, color, publicKey)
         }
         break
 

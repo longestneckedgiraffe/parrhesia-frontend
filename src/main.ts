@@ -579,16 +579,14 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
       saveMessages()
       render()
     },
-    (peerId, color) => {
+    (peerId, color, publicKey) => {
       canSend = connection?.canSend() || false
-      const publicKey = connection?.getPeerPublicKey(peerId)
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has joined', verified)
     },
-    (peerId, color) => {
+    (peerId, color, publicKey) => {
       canSend = connection?.canSend() || false
-      const publicKey = connection?.getPeerPublicKey(peerId)
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has left', verified)
