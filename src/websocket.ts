@@ -1,12 +1,12 @@
 import { config } from './config'
 import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from './crypto'
 import type { PeerColor } from './crypto'
-import { checkPeerKey, storePeerKey, acceptKeyChange } from './tofu'
+import { checkPeerKey, storePeerKey } from './tofu'
 
 export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
 export type PeerHandler = (peerId: string, color: PeerColor) => void
 export type StatusHandler = (status: string) => void
-export type KeyChangeHandler = (peerId: string, color: PeerColor, oldKey: string | null, newKey: string) => void
+export type KeyChangeHandler = (peerId: string, color: PeerColor) => void
 
 interface WsMessage {
   type: string
@@ -27,7 +27,6 @@ export class ChatConnection {
   private onPeerLeft: PeerHandler
   private onStatus: StatusHandler
   private onKeyChange?: KeyChangeHandler
-  private pendingKeyChanges: Map<string, string> = new Map()
 
   constructor(
     roomId: string,
@@ -92,10 +91,9 @@ export class ChatConnection {
           const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
 
           if (keyCheck.status === 'key_changed') {
-            this.pendingKeyChanges.set(data.peer_id, data.public_key)
             if (this.onKeyChange) {
               const color = await deriveColorFromPublicKey(data.public_key)
-              this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
+              this.onKeyChange(data.peer_id, color)
             }
             return
           }
@@ -123,10 +121,9 @@ export class ChatConnection {
           const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
 
           if (keyCheck.status === 'key_changed') {
-            this.pendingKeyChanges.set(data.peer_id, data.public_key)
             if (this.onKeyChange) {
               const color = await deriveColorFromPublicKey(data.public_key)
-              this.onKeyChange(data.peer_id, color, keyCheck.stored?.publicKeyBase64 || null, data.public_key)
+              this.onKeyChange(data.peer_id, color)
             }
             return
           }
@@ -230,25 +227,6 @@ export class ChatConnection {
     return this.keyManager.getMyColor()
   }
 
-  async acceptPeerKeyChange(peerId: string): Promise<void> {
-    const newKey = this.pendingKeyChanges.get(peerId)
-    if (!newKey) return
-
-    acceptKeyChange(this.roomId, peerId, newKey)
-    await this.keyManager.addPeer(peerId, newKey)
-    this.pendingKeyChanges.delete(peerId)
-
-    const color = this.keyManager.getPeerColor(peerId)
-    this.onPeerJoined(peerId, color)
-
-    if (this.keyManager.hasGroupKey()) {
-      await this.sendGroupKeyToPeer(peerId)
-    }
-  }
-
-  rejectPeerKeyChange(peerId: string): void {
-    this.pendingKeyChanges.delete(peerId)
-  }
 
   getMyPublicKey(): string {
     return this.keyManager.getMyPublicKey()
@@ -270,9 +248,6 @@ export class ChatConnection {
     return this.roomId
   }
 
-  hasPendingKeyChange(peerId: string): boolean {
-    return this.pendingKeyChanges.has(peerId)
-  }
 }
 
 export async function createRoom(): Promise<string> {

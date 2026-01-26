@@ -274,6 +274,8 @@ hr {
   background: var(--bg-subtle);
   color: var(--text);
   cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
   transition: border-color 0.15s, background-color 0.15s;
 }
 
@@ -330,28 +332,6 @@ hr {
 .color-magenta { color: #cc00cc; }
 .color-orange { color: #cc6600; }
 .color-gold { color: #b8860b; }
-
-.key-change-warning {
-  padding: 0.5em 0;
-  margin-bottom: 0.5em;
-  border-bottom: 1px solid var(--border);
-}
-
-.warning-action {
-  padding: 0.4em 0.8em;
-  border: 1px solid var(--border-dark);
-  background: var(--bg-subtle);
-  color: var(--text);
-  cursor: pointer;
-  font-size: inherit;
-  font-family: inherit;
-  margin-left: 0.5em;
-}
-
-.warning-action:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-hover);
-}
 
 .verification-overlay {
   position: fixed;

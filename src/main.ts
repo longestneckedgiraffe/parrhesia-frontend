@@ -110,7 +110,6 @@ let selectedPeerForVerification: string | null = null
 let verificationSafetyNumber = ''
 let qrCodeDataUrl = ''
 let isScanning = false
-let pendingKeyChangePeers: Map<string, { color: PeerColor; oldKey: string | null; newKey: string }> = new Map()
 
 let showPasswordModal = false
 let passwordModalMode: 'setup' | 'unlock' = 'setup'
@@ -303,19 +302,6 @@ function renderPeersList(): string {
   return `<div class="peers-list">${peers.join(' ')}</div>`
 }
 
-function renderKeyChangeWarnings(): string {
-  if (pendingKeyChangePeers.size === 0) return ''
-
-  const warnings = Array.from(pendingKeyChangePeers.entries()).map(([peerId, data]) => {
-    return `<div class="key-change-warning">
-      <span class="color-${data.color}">${data.color}</span>'s key has changed.
-      <span class="warning-action" data-action="accept" data-peer-id="${peerId}">accept</span>
-      <span class="warning-action" data-action="block" data-peer-id="${peerId}">block</span>
-    </div>`
-  }).join('')
-
-  return warnings
-}
 
 function renderVerificationPanel(): string {
   if (!showVerificationPanel || !selectedPeerForVerification) return ''
@@ -353,7 +339,6 @@ function renderVerificationPanel(): string {
 
 function renderChat(app: HTMLDivElement): void {
   const peersList = renderPeersList()
-  const keyChangeWarnings = renderKeyChangeWarnings()
   const verificationPanel = renderVerificationPanel()
   const theme = getCurrentEffectiveTheme()
 
@@ -380,11 +365,10 @@ function renderChat(app: HTMLDivElement): void {
 
   app.innerHTML = `
     <div class="chat">
-      ${keyChangeWarnings}
       <div class="chat-header">
         ${peersList || `<span class="status-text">${statusText}</span>`}
       </div>
-      <div class="messages" id="messages">${messagesHtml || '<p class="empty">No messages yet</p>'}</div>
+      <div class="messages" id="messages">${messagesHtml}</div>
       <div class="chat-input">
         <input type="text" id="message-input" placeholder="Type a message..." ${canSend ? '' : 'disabled'}>
         <button id="send-message" ${canSend ? '' : 'disabled'}>Send</button>
@@ -411,17 +395,6 @@ function renderChat(app: HTMLDivElement): void {
       e.stopPropagation()
       const peerId = (e.currentTarget as HTMLElement).dataset.peerId
       if (peerId) await openVerificationPanel(peerId)
-    })
-  })
-
-  document.querySelectorAll('.warning-action').forEach(el => {
-    el.addEventListener('click', async (e) => {
-      const target = e.currentTarget as HTMLElement
-      const action = target.dataset.action
-      const peerId = target.dataset.peerId
-      if (!peerId) return
-      if (action === 'accept') await handleAcceptKeyChange(peerId)
-      else if (action === 'block') handleRejectKeyChange(peerId)
     })
   })
 
@@ -527,22 +500,8 @@ function handleMarkVerified(): void {
   }
 }
 
-async function handleAcceptKeyChange(peerId: string): Promise<void> {
-  pendingKeyChangePeers.delete(peerId)
-  await connection?.acceptPeerKeyChange(peerId)
-  render()
-}
-
-function handleRejectKeyChange(peerId: string): void {
-  pendingKeyChangePeers.delete(peerId)
-  connection?.rejectPeerKeyChange(peerId)
-  addSystemMessage('Blocked peer due to key change')
-  render()
-}
-
-function handleKeyChange(peerId: string, color: PeerColor, oldKey: string | null, newKey: string): void {
-  pendingKeyChangePeers.set(peerId, { color, oldKey, newKey })
-  addSystemMessage(`${color}'s encryption key has changed`)
+function handleKeyChange(_peerId: string, color: PeerColor): void {
+  addSystemMessage(`${color} was blocked due to key change`)
 }
 
 async function handleCreateRoom(): Promise<void> {
@@ -670,8 +629,7 @@ const SANDBOX_COMPONENTS = [
   'password-unlock',
   'password-error',
   'verification-panel',
-  'verification-verified',
-  'key-change-warning'
+  'verification-verified'
 ] as const
 
 type SandboxComponent = typeof SANDBOX_COMPONENTS[number]
@@ -717,8 +675,6 @@ function renderSandbox(): void {
 }
 
 function renderSandboxComponent(component: SandboxComponent): string {
-  const theme = getCurrentEffectiveTheme()
-
   switch (component) {
     case 'landing':
       return `
@@ -732,13 +688,6 @@ function renderSandboxComponent(component: SandboxComponent): string {
             <span class="or">or</span>
             <button>Create Room</button>
           </div>
-          <div class="footer-links">
-            <a href="#">frontend code</a>
-            <a href="#">backend code</a>
-          </div>
-          <div class="theme-toggle">
-            <a>${theme}</a>
-          </div>
         </div>
       `
 
@@ -748,7 +697,7 @@ function renderSandboxComponent(component: SandboxComponent): string {
           <div class="chat-header">
             <span class="status-text">Waiting for peers.</span>
           </div>
-          <div class="messages"><p class="empty">No messages yet</p></div>
+          <div class="messages"></div>
           <div class="chat-input">
             <input type="text" placeholder="Type a message..." disabled>
             <button disabled>Send</button>
@@ -792,7 +741,7 @@ function renderSandboxComponent(component: SandboxComponent): string {
               <span class="peer-item color-unverified">unverified</span>
             </div>
           </div>
-          <div class="messages"><p class="empty">No messages yet</p></div>
+          <div class="messages"></div>
           <div class="chat-input">
             <input type="text" placeholder="Type a message...">
             <button>Send</button>
@@ -882,29 +831,6 @@ function renderSandboxComponent(component: SandboxComponent): string {
               <span class="action-link">Scan QR</span>
               <span class="verified-text">Verified</span>
             </div>
-          </div>
-        </div>
-      `
-
-    case 'key-change-warning':
-      return `
-        <div class="chat">
-          <div class="key-change-warning">
-            <span class="color-green">green</span>'s key has changed.
-            <span class="warning-action">accept</span>
-            <span class="warning-action">block</span>
-          </div>
-          <div class="chat-header">
-            <div class="peers-list">
-              <span class="color-blue">blue (you)</span>
-            </div>
-          </div>
-          <div class="messages">
-            <div class="message system"><span class="text">green's encryption key has changed</span></div>
-          </div>
-          <div class="chat-input">
-            <input type="text" placeholder="Type a message..." disabled>
-            <button disabled>Send</button>
           </div>
         </div>
       `
