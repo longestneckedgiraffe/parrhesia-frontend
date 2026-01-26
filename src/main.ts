@@ -291,7 +291,8 @@ function renderPeersList(): string {
 
   peerIds.forEach(peerId => {
     const color = connection!.getPeerColor(peerId)
-    const stored = getStoredPeerKey(currentRoomId, peerId)
+    const publicKey = connection!.getPeerPublicKey(peerId)
+    const stored = publicKey ? getStoredPeerKey(currentRoomId, peerId, publicKey) : null
     const isVerified = stored?.status === 'verified'
     const colorClass = isVerified ? `color-${color}` : 'color-unverified'
     const displayName = isVerified ? color : 'unverified'
@@ -309,7 +310,7 @@ function renderVerificationPanel(): string {
   const peerKey = connection?.getPeerPublicKey(selectedPeerForVerification)
   if (!peerKey) return ''
 
-  const stored = getStoredPeerKey(currentRoomId, selectedPeerForVerification)
+  const stored = getStoredPeerKey(currentRoomId, selectedPeerForVerification, peerKey)
   const isVerified = stored?.status === 'verified'
 
   return `
@@ -476,7 +477,7 @@ function pollForQRCode(video: HTMLVideoElement): void {
   if (result && selectedPeerForVerification) {
     const peerPublicKey = connection?.getPeerPublicKey(selectedPeerForVerification)
     if (peerPublicKey && result === peerPublicKey) {
-      markAsVerified(currentRoomId, selectedPeerForVerification)
+      markAsVerified(currentRoomId, selectedPeerForVerification, peerPublicKey)
       addSystemMessage('Key verified successfully')
       stopQRScan()
     } else if (result) {
@@ -499,8 +500,11 @@ function stopQRScan(): void {
 
 function handleMarkVerified(): void {
   if (selectedPeerForVerification) {
-    markAsVerified(currentRoomId, selectedPeerForVerification)
-    addSystemMessage('Peer marked as verified')
+    const peerPublicKey = connection?.getPeerPublicKey(selectedPeerForVerification)
+    if (peerPublicKey) {
+      markAsVerified(currentRoomId, selectedPeerForVerification, peerPublicKey)
+      addSystemMessage('Peer marked as verified')
+    }
     render()
   }
 }
@@ -568,7 +572,8 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
   const newConnection = new ChatConnection(
     roomId,
     (peerId, color, text) => {
-      const stored = getStoredPeerKey(roomId, peerId)
+      const publicKey = connection?.getPeerPublicKey(peerId)
+      const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       messages.push({ peerId, color, text, isMine: false, verified })
       saveMessages()
@@ -576,13 +581,15 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
     },
     (peerId, color) => {
       canSend = connection?.canSend() || false
-      const stored = getStoredPeerKey(roomId, peerId)
+      const publicKey = connection?.getPeerPublicKey(peerId)
+      const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has joined', verified)
     },
     (peerId, color) => {
       canSend = connection?.canSend() || false
-      const stored = getStoredPeerKey(roomId, peerId)
+      const publicKey = connection?.getPeerPublicKey(peerId)
+      const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has left', verified)
     },

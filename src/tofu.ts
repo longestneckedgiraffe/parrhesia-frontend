@@ -18,8 +18,8 @@ interface TofuStore {
 const STORAGE_KEY = 'parrhesia-tofu'
 const VERIFICATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
-function getPeerLookupKey(roomId: string, peerId: string): string {
-  return JSON.stringify([roomId, peerId])
+function getKeyLookupKey(roomId: string, publicKeyBase64: string): string {
+  return JSON.stringify([roomId, publicKeyBase64])
 }
 
 function loadTofuStore(): TofuStore {
@@ -42,24 +42,39 @@ function isVerificationExpired(record: StoredPeerKey): boolean {
   return Date.now() - record.verifiedAt > VERIFICATION_MAX_AGE_MS
 }
 
-export function getStoredPeerKey(roomId: string, peerId: string): StoredPeerKey | null {
+export function getStoredKey(roomId: string, publicKeyBase64: string): StoredPeerKey | null {
   const store = loadTofuStore()
-  const key = getPeerLookupKey(roomId, peerId)
+  const key = getKeyLookupKey(roomId, publicKeyBase64)
   return store.peers[key] || null
+}
+
+export function getStoredPeerKey(roomId: string, peerId: string, publicKeyBase64?: string): StoredPeerKey | null {
+  if (publicKeyBase64) {
+    return getStoredKey(roomId, publicKeyBase64)
+  }
+  const store = loadTofuStore()
+  for (const record of Object.values(store.peers)) {
+    if (record.roomId === roomId && record.peerId === peerId) {
+      return record
+    }
+  }
+  return null
 }
 
 export function storePeerKey(roomId: string, peerId: string, publicKeyBase64: string): StoredPeerKey {
   const store = loadTofuStore()
-  const key = getPeerLookupKey(roomId, peerId)
+  const key = getKeyLookupKey(roomId, publicKeyBase64)
+  const existing = store.peers[key]
   const now = Date.now()
 
   const record: StoredPeerKey = {
     peerId,
     roomId,
     publicKeyBase64,
-    status: 'unverified',
-    firstSeen: now,
-    lastSeen: now
+    status: existing?.status || 'unverified',
+    firstSeen: existing?.firstSeen || now,
+    lastSeen: now,
+    verifiedAt: existing?.verifiedAt
   }
 
   store.peers[key] = record
@@ -74,64 +89,44 @@ export interface KeyCheckResult {
 }
 
 export function checkPeerKey(roomId: string, peerId: string, publicKeyBase64: string): KeyCheckResult {
-  const stored = getStoredPeerKey(roomId, peerId)
+  const store = loadTofuStore()
+  const key = getKeyLookupKey(roomId, publicKeyBase64)
+  const stored = store.peers[key]
 
   if (!stored) {
     return { status: 'unverified', stored: null, isNewKey: true }
   }
 
-  if (stored.publicKeyBase64 === publicKeyBase64) {
-    const store = loadTofuStore()
-    const key = getPeerLookupKey(roomId, peerId)
-    store.peers[key].lastSeen = Date.now()
+  store.peers[key].peerId = peerId
+  store.peers[key].lastSeen = Date.now()
 
-    if (isVerificationExpired(stored)) {
-      store.peers[key].status = 'unverified'
-      store.peers[key].verifiedAt = undefined
-      saveTofuStore(store)
-      return { status: 'unverified', stored: store.peers[key], isNewKey: false }
-    }
-
+  if (isVerificationExpired(stored)) {
+    store.peers[key].status = 'unverified'
+    store.peers[key].verifiedAt = undefined
     saveTofuStore(store)
-    return { status: stored.status, stored, isNewKey: false }
-  }
-
-  return { status: 'key_changed', stored, isNewKey: false }
-}
-
-export function acceptKeyChange(roomId: string, peerId: string, newPublicKey: string): void {
-  const store = loadTofuStore()
-  const key = getPeerLookupKey(roomId, peerId)
-  const existing = store.peers[key]
-  const now = Date.now()
-
-  store.peers[key] = {
-    peerId,
-    roomId,
-    publicKeyBase64: newPublicKey,
-    status: 'unverified',
-    firstSeen: existing?.firstSeen || now,
-    lastSeen: now
+    return { status: 'unverified', stored: store.peers[key], isNewKey: false }
   }
 
   saveTofuStore(store)
+  return { status: stored.status, stored: store.peers[key], isNewKey: false }
 }
 
-export function markAsVerified(roomId: string, peerId: string): void {
+export function markAsVerified(roomId: string, peerId: string, publicKeyBase64: string): void {
   const store = loadTofuStore()
-  const key = getPeerLookupKey(roomId, peerId)
+  const key = getKeyLookupKey(roomId, publicKeyBase64)
   if (store.peers[key]) {
     const now = Date.now()
     store.peers[key].status = 'verified'
     store.peers[key].verifiedAt = now
     store.peers[key].lastSeen = now
+    store.peers[key].peerId = peerId
     saveTofuStore(store)
   }
 }
 
-export function resetVerification(roomId: string, peerId: string): void {
+export function resetVerification(roomId: string, publicKeyBase64: string): void {
   const store = loadTofuStore()
-  const key = getPeerLookupKey(roomId, peerId)
+  const key = getKeyLookupKey(roomId, publicKeyBase64)
   if (store.peers[key]) {
     store.peers[key].status = 'unverified'
     store.peers[key].verifiedAt = undefined
@@ -167,4 +162,3 @@ export async function generateSafetyNumber(myPublicKey: string, peerPublicKey: s
 
   return groups.join(' ')
 }
-
