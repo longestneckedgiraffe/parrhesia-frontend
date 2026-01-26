@@ -321,7 +321,7 @@ function renderVerificationPanel(): string {
         <div class="verification-info">Compare this number with your contact to verify the connection is secure.</div>
         <div class="safety-number">${verificationSafetyNumber}</div>
         <div class="verification-actions">
-          <span id="show-qr-btn" class="action-link">Show QR</span>
+          <span id="show-qr-btn" class="action-link">${qrCodeDataUrl ? 'Hide QR' : 'Show QR'}</span>
           <span id="scan-qr-btn" class="action-link">Scan QR</span>
           ${!isVerified ? '<span id="mark-verified-btn" class="action-link">Verify</span>' : '<span class="verified-text">Verified</span>'}
         </div>
@@ -399,7 +399,7 @@ function renderChat(app: HTMLDivElement): void {
   })
 
   document.getElementById('close-verification')?.addEventListener('click', closeVerificationPanel)
-  document.getElementById('show-qr-btn')?.addEventListener('click', showQRCode)
+  document.getElementById('show-qr-btn')?.addEventListener('click', toggleQRCode)
   document.getElementById('scan-qr-btn')?.addEventListener('click', startQRScan)
   document.getElementById('stop-scan-btn')?.addEventListener('click', stopQRScan)
   document.getElementById('mark-verified-btn')?.addEventListener('click', handleMarkVerified)
@@ -437,7 +437,12 @@ function closeVerificationPanel(): void {
   render()
 }
 
-async function showQRCode(): Promise<void> {
+async function toggleQRCode(): Promise<void> {
+  if (qrCodeDataUrl) {
+    qrCodeDataUrl = ''
+    render()
+    return
+  }
   const myPublicKey = connection?.getMyPublicKey()
   if (!myPublicKey) return
   qrCodeDataUrl = await generateQRCode(myPublicKey)
@@ -630,6 +635,7 @@ const SANDBOX_COMPONENTS = [
   'password-unlock',
   'password-error',
   'verification-panel',
+  'verification-with-qr',
   'verification-verified'
 ] as const
 
@@ -814,6 +820,25 @@ function renderSandboxComponent(component: SandboxComponent): string {
               <span class="action-link">Scan QR</span>
               <span class="action-link">Verify</span>
             </div>
+          </div>
+        </div>
+      `
+
+    case 'verification-with-qr':
+      return `
+        <div class="verification-overlay" style="position: relative; height: 450px;">
+          <div class="verification-panel">
+            <div class="verification-header">
+              <span class="close-link">Close</span>
+            </div>
+            <div class="verification-info">Compare this number with your contact to verify the connection is secure.</div>
+            <div class="safety-number">12345 67890 11121 31415 16171 81920</div>
+            <div class="verification-actions">
+              <span class="action-link">Hide QR</span>
+              <span class="action-link">Scan QR</span>
+              <span class="action-link">Verify</span>
+            </div>
+            <div class="qr-display"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23eee' width='100' height='100'/%3E%3Ctext x='50' y='55' text-anchor='middle' fill='%23999'%3EQR%3C/text%3E%3C/svg%3E" alt="QR Code"></div>
           </div>
         </div>
       `
