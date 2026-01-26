@@ -121,7 +121,7 @@ function renderPasswordModal(): string {
 
   const isSetup = passwordModalMode === 'setup'
   const description = isSetup
-    ? 'Optionally add a password to encrypt your private keys. This protects them if your device is compromised.'
+    ? 'Add a password to encrypt your private keys (recommended). This is a one-time choice; skipping requires clearing browser data to enable later.'
     : 'Enter your password to unlock your encrypted keys.'
 
   return `
@@ -763,7 +763,7 @@ function renderSandboxComponent(component: SandboxComponent): string {
             <div class="verification-header">
               <span class="close-link">Skip</span>
             </div>
-            <div class="verification-info">Optionally add a password to encrypt your private keys. This protects them if your device is compromised.</div>
+            <div class="verification-info">Add a password to encrypt your private keys (recommended). This is a one-time choice; skipping requires clearing browser data to enable later.</div>
             <input type="password" class="password-input" placeholder="Enter password">
             <input type="password" class="password-input" placeholder="Confirm password">
             <div class="verification-actions">
@@ -880,8 +880,18 @@ async function init(): Promise<void> {
   if (roomId) {
     const exists = await checkRoom(roomId)
     if (exists) {
-      await joinRoom(roomId)
-      return
+      if (isKeyPasswordProtected()) {
+        pendingRoomId = roomId
+        passwordModalMode = 'unlock'
+        showPasswordModal = true
+      } else if (!hasStoredKeys()) {
+        pendingRoomId = roomId
+        passwordModalMode = 'setup'
+        showPasswordModal = true
+      } else {
+        await joinRoom(roomId)
+        return
+      }
     } else {
       status = 'Room does not exist or has expired'
     }
