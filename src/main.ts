@@ -558,11 +558,9 @@ async function handleJoinRoom(): Promise<void> {
 }
 
 async function joinRoom(roomId: string, password?: string): Promise<void> {
-  currentRoomId = roomId
-  messages = loadMessages(roomId)
   canSend = false
 
-  connection = new ChatConnection(
+  const newConnection = new ChatConnection(
     roomId,
     (peerId, color, text) => {
       const stored = getStoredPeerKey(roomId, peerId)
@@ -590,12 +588,15 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
     handleKeyChange
   )
 
-  currentView = 'chat'
-  render()
+  await newConnection.connect(password)
 
-  await connection.connect(password)
+  connection = newConnection
+  currentRoomId = roomId
+  messages = loadMessages(roomId)
   myPeerId = connection.getPeerId()
   myColor = connection.getMyColor()
+  currentView = 'chat'
+  render()
 
   const url = new URL(window.location.href)
   url.searchParams.set('room', roomId)
