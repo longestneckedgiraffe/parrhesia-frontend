@@ -23,6 +23,7 @@ const AES_PARAMS = {
 const PBKDF2_ITERATIONS = 600000
 const STORAGE_KEY = 'parrhesia-keypair'
 const WRAPPED_STORAGE_KEY = 'parrhesia-keypair-wrapped'
+const MESSAGE_SALT_KEY = 'parrhesia-message-salt'
 
 interface WrappedKeyData {
   wrappedKey: string
@@ -106,6 +107,64 @@ export function isKeyPasswordProtected(): boolean {
 
 export function hasStoredKeys(): boolean {
   return localStorage.getItem(STORAGE_KEY) !== null || localStorage.getItem(WRAPPED_STORAGE_KEY) !== null
+}
+
+export async function deriveMessageKey(password: string): Promise<CryptoKey> {
+  let saltBase64 = localStorage.getItem(MESSAGE_SALT_KEY)
+  let salt: Uint8Array
+
+  if (!saltBase64) {
+    salt = crypto.getRandomValues(new Uint8Array(16))
+    saltBase64 = btoa(String.fromCharCode(...salt))
+    localStorage.setItem(MESSAGE_SALT_KEY, saltBase64)
+  } else {
+    salt = Uint8Array.from(atob(saltBase64), c => c.charCodeAt(0))
+  }
+
+  const passwordKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password + '-messages'),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  )
+
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    passwordKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  )
+}
+
+export interface EncryptedData {
+  encrypted: true
+  iv: string
+  data: string
+}
+
+export async function encryptMessages(messages: unknown[], key: CryptoKey): Promise<EncryptedData> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const plaintext = new TextEncoder().encode(JSON.stringify(messages))
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext)
+
+  return {
+    encrypted: true,
+    iv: btoa(String.fromCharCode(...iv)),
+    data: btoa(String.fromCharCode(...new Uint8Array(ciphertext)))
+  }
+}
+
+export async function decryptMessages(encrypted: EncryptedData, key: CryptoKey): Promise<unknown[]> {
+  const iv = Uint8Array.from(atob(encrypted.iv), c => c.charCodeAt(0))
+  const ciphertext = Uint8Array.from(atob(encrypted.data), c => c.charCodeAt(0))
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
+  return JSON.parse(new TextDecoder().decode(plaintext))
+}
+
+export function isEncryptedData(data: unknown): data is EncryptedData {
+  return typeof data === 'object' && data !== null && 'encrypted' in data && (data as EncryptedData).encrypted === true
 }
 
 export async function deriveColorFromPublicKey(publicKeyBase64: string): Promise<PeerColor> {

@@ -1,7 +1,7 @@
 import './style.css'
 import { ChatConnection, createRoom, checkRoom } from './websocket'
 import type { PeerColor } from './crypto'
-import { isKeyPasswordProtected, hasStoredKeys } from './crypto'
+import { isKeyPasswordProtected, hasStoredKeys, deriveMessageKey, encryptMessages, decryptMessages, isEncryptedData } from './crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
 
@@ -65,35 +65,48 @@ interface Message {
 }
 
 let currentRoomId = ''
+let messageEncryptionKey: CryptoKey | null = null
 
 function getStorageKey(roomId: string): string {
   return `parrhesia-messages-${roomId}`
 }
 
-function saveMessages(): void {
+async function saveMessages(): Promise<void> {
   if (!currentRoomId) return
-  localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(messages))
+  if (messageEncryptionKey) {
+    const encrypted = await encryptMessages(messages, messageEncryptionKey)
+    localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(encrypted))
+  } else {
+    localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(messages))
+  }
 }
 
-function loadMessages(roomId: string): Message[] {
+async function loadMessages(roomId: string): Promise<Message[]> {
   const stored = localStorage.getItem(getStorageKey(roomId))
   if (!stored) return []
   try {
-    return JSON.parse(stored)
+    const parsed = JSON.parse(stored)
+    if (isEncryptedData(parsed) && messageEncryptionKey) {
+      return await decryptMessages(parsed, messageEncryptionKey) as Message[]
+    }
+    if (isEncryptedData(parsed) && !messageEncryptionKey) {
+      return []
+    }
+    return parsed
   } catch {
     return []
   }
 }
 
-function addSystemMessage(text: string): void {
+async function addSystemMessage(text: string): Promise<void> {
   messages.push({ peerId: 'system', color: 'blue', text, isMine: false, isSystem: true })
-  saveMessages()
+  await saveMessages()
   render()
 }
 
-function addNotification(color: PeerColor, text: string, verified?: boolean): void {
+async function addNotification(color: PeerColor, text: string, verified?: boolean): Promise<void> {
   messages.push({ peerId: 'notification', color, text, isMine: false, isNotification: true, verified })
-  saveMessages()
+  await saveMessages()
   render()
 }
 
@@ -121,7 +134,7 @@ function renderPasswordModal(): string {
 
   const isSetup = passwordModalMode === 'setup'
   const description = isSetup
-    ? 'Add a password to encrypt your private keys (recommended). This is a one-time choice; skipping requires clearing browser data to enable later.'
+    ? 'Add a password to encrypt your private keys and messages (highly recommended). This is a one-time choice; skipping requires clearing browser data to enable later.'
     : 'Enter your password to unlock your encrypted keys.'
 
   return `
@@ -203,11 +216,14 @@ async function handlePasswordSubmit(): Promise<void> {
   showPasswordModal = false
   passwordError = ''
 
+  messageEncryptionKey = await deriveMessageKey(password)
+
   if (pendingRoomId) {
     try {
       await joinRoom(pendingRoomId, password)
     } catch (e) {
       if (passwordModalMode === 'unlock') {
+        messageEncryptionKey = null
         passwordError = 'Invalid password'
         showPasswordModal = true
         render()
@@ -571,12 +587,12 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
 
   const newConnection = new ChatConnection(
     roomId,
-    (peerId, color, text) => {
+    async (peerId, color, text) => {
       const publicKey = connection?.getPeerPublicKey(peerId)
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       messages.push({ peerId, color, text, isMine: false, verified })
-      saveMessages()
+      await saveMessages()
       render()
     },
     (peerId, color, publicKey) => {
@@ -602,7 +618,7 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
 
   connection = newConnection
   currentRoomId = roomId
-  messages = loadMessages(roomId)
+  messages = await loadMessages(roomId)
   myPeerId = connection.getPeerId()
   myColor = connection.getMyColor()
   currentView = 'chat'
@@ -619,7 +635,7 @@ async function handleSendMessage(): Promise<void> {
   if (!text || !canSend) return
 
   messages.push({ peerId: myPeerId, color: myColor, text, isMine: true })
-  saveMessages()
+  await saveMessages()
   input.value = ''
   render()
 
@@ -768,7 +784,7 @@ function renderSandboxComponent(component: SandboxComponent): string {
             <div class="verification-header">
               <span class="close-link">Skip</span>
             </div>
-            <div class="verification-info">Add a password to encrypt your private keys (recommended). This is a one-time choice; skipping requires clearing browser data to enable later.</div>
+            <div class="verification-info">Add a password to encrypt your private keys and messages (highly recommended). This is a one-time choice; skipping requires clearing browser data to enable later.</div>
             <input type="password" class="password-input" placeholder="Enter password">
             <input type="password" class="password-input" placeholder="Confirm password">
             <div class="verification-actions">
