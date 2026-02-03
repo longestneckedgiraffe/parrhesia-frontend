@@ -4,6 +4,7 @@ import type { PeerColor } from './crypto'
 import { isKeyPasswordProtected, hasStoredKeys, deriveMessageKey, encryptMessages, decryptMessages, isEncryptedData } from './crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
+import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './tabSync'
 
 function getTheme(): 'light' | 'dark' | null {
   return localStorage.getItem('parrhesia-theme') as 'light' | 'dark' | null
@@ -637,6 +638,12 @@ async function handleJoinRoom(): Promise<void> {
     return
   }
 
+  if (isRoomOccupied(roomId)) {
+    status = 'Already connected to this room in another tab'
+    render()
+    return
+  }
+
   if (isKeyPasswordProtected()) {
     pendingRoomId = roomId
     passwordModalMode = 'unlock'
@@ -653,6 +660,13 @@ async function handleJoinRoom(): Promise<void> {
 }
 
 async function joinRoom(roomId: string, password?: string): Promise<void> {
+  if (isRoomOccupied(roomId)) {
+    status = 'Already connected to this room in another tab'
+    currentView = 'landing'
+    render()
+    return
+  }
+
   canSend = false
 
   const newConnection = new ChatConnection(
@@ -679,6 +693,9 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
     },
     (newStatus) => {
       canSend = connection?.canSend() || false
+      if (newStatus === 'Disconnected from room' || newStatus === 'This room has expired') {
+        onRoomLeft(roomId)
+      }
       addSystemMessage(newStatus)
     },
     handleKeyChange
@@ -688,6 +705,7 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
 
   connection = newConnection
   currentRoomId = roomId
+  onRoomJoined(roomId)
   messages = await loadMessages(roomId)
   myPeerId = connection.getPeerId()
   myColor = connection.getMyColor()
@@ -1015,6 +1033,7 @@ function renderSandboxComponent(component: SandboxComponent): string {
 
 async function init(): Promise<void> {
   initTheme()
+  initTabSync()
   const url = new URL(window.location.href)
 
   if (url.pathname === '/sandbox' && isLocalhost()) {
@@ -1027,7 +1046,9 @@ async function init(): Promise<void> {
   if (roomId) {
     const exists = await checkRoom(roomId)
     if (exists) {
-      if (isKeyPasswordProtected()) {
+      if (isRoomOccupied(roomId)) {
+        status = 'Already connected to this room in another tab'
+      } else if (isKeyPasswordProtected()) {
         pendingRoomId = roomId
         passwordModalMode = 'unlock'
         showPasswordModal = true
