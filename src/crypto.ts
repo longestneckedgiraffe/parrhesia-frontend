@@ -168,11 +168,25 @@ export function isEncryptedData(data: unknown): data is EncryptedData {
 }
 
 export async function deriveColorFromPublicKey(publicKeyBase64: string): Promise<PeerColor> {
+  const prefs = await deriveColorPreferences(publicKeyBase64)
+  return prefs[0]
+}
+
+export async function deriveColorPreferences(publicKeyBase64: string): Promise<PeerColor[]> {
   const data = new TextEncoder().encode(publicKeyBase64)
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
   const bytes = new Uint8Array(hashBuffer)
-  const index = bytes[0] % PEER_COLORS.length
-  return PEER_COLORS[index]
+
+  const firstIndex = bytes[0] % PEER_COLORS.length
+  const result: PeerColor[] = [PEER_COLORS[firstIndex]]
+
+  const remaining = [...PEER_COLORS].filter((_, i) => i !== firstIndex)
+  for (let i = remaining.length - 1; i > 0; i--) {
+    const j = bytes[i] % (i + 1)
+    ;[remaining[i], remaining[j]] = [remaining[j], remaining[i]]
+  }
+
+  return [...result, ...remaining]
 }
 
 async function exportPrivateKey(key: CryptoKey): Promise<JsonWebKey> {
@@ -333,6 +347,7 @@ export class GroupKeyManager {
   private peerSharedKeys: Map<string, CryptoKey> = new Map()
   private peerPublicKeys: Map<string, string> = new Map()
   private peerColors: Map<string, PeerColor> = new Map()
+  private colorPreferences: Map<string, PeerColor[]> = new Map()
   private groupKey: CryptoKey | null = null
   private isCreator: boolean = false
   private creatorId: string = ''
@@ -341,7 +356,9 @@ export class GroupKeyManager {
     const { keyPair, publicKey } = await getOrCreateKeyPair(password)
     this.keyPair = keyPair
     this.myPublicKey = publicKey
-    this.myColor = await deriveColorFromPublicKey(publicKey)
+    const prefs = await deriveColorPreferences(publicKey)
+    this.colorPreferences.set(publicKey, prefs)
+    this.myColor = prefs[0]
     return publicKey
   }
 
@@ -364,13 +381,42 @@ export class GroupKeyManager {
     const sharedKey = await deriveSharedKey(this.keyPair.privateKey, peerPublicKey)
     this.peerSharedKeys.set(peerId, sharedKey)
     this.peerPublicKeys.set(peerId, publicKeyBase64)
-    this.peerColors.set(peerId, await deriveColorFromPublicKey(publicKeyBase64))
+    if (!this.colorPreferences.has(publicKeyBase64)) {
+      this.colorPreferences.set(publicKeyBase64, await deriveColorPreferences(publicKeyBase64))
+    }
+    this.recomputeColors()
   }
 
   removePeer(peerId: string): void {
+    const pubKey = this.peerPublicKeys.get(peerId)
     this.peerSharedKeys.delete(peerId)
     this.peerPublicKeys.delete(peerId)
     this.peerColors.delete(peerId)
+    if (pubKey) this.colorPreferences.delete(pubKey)
+    this.recomputeColors()
+  }
+
+  private recomputeColors(): void {
+    const allEntries: { id: string; publicKey: string }[] = [
+      { id: '__self__', publicKey: this.myPublicKey }
+    ]
+    for (const [peerId, pubKey] of this.peerPublicKeys) {
+      allEntries.push({ id: peerId, publicKey: pubKey })
+    }
+
+    allEntries.sort((a, b) => a.publicKey.localeCompare(b.publicKey))
+
+    const taken = new Set<PeerColor>()
+    for (const entry of allEntries) {
+      const prefs = this.colorPreferences.get(entry.publicKey)!
+      const color = prefs.find(c => !taken.has(c)) || prefs[0]
+      taken.add(color)
+      if (entry.id === '__self__') {
+        this.myColor = color
+      } else {
+        this.peerColors.set(entry.id, color)
+      }
+    }
   }
 
   getPeerColor(peerId: string): PeerColor {

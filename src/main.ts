@@ -651,12 +651,14 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
     },
     (peerId, color, publicKey) => {
       canSend = connection?.canSend() || false
+      myColor = connection?.getMyColor() || myColor
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has joined', verified)
     },
     (peerId, color, publicKey) => {
       canSend = connection?.canSend() || false
+      myColor = connection?.getMyColor() || myColor
       const existing = typingPeers.get(peerId)
       if (existing) {
         clearTimeout(existing.timeout)
