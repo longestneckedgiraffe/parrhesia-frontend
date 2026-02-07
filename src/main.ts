@@ -124,7 +124,6 @@ let verificationSafetyNumber = ''
 let qrCodeDataUrl = ''
 let isScanning = false
 
-let showSecurityInfo = false
 
 const TYPING_THROTTLE_MS = 2000
 const TYPING_TIMEOUT_MS = 3000
@@ -361,47 +360,6 @@ function renderVerificationPanel(): string {
   `
 }
 
-function renderSecurityInfo(): string {
-  if (!showSecurityInfo) return ''
-
-  const myPublicKey = connection?.getMyPublicKey() || ''
-  const peerIds = connection?.getPeerIds() || []
-
-  const peerKeysHtml = peerIds.map(peerId => {
-    const publicKey = connection?.getPeerPublicKey(peerId) || ''
-    return `<div class="security-key-field">${publicKey}</div>`
-  }).join('')
-
-  return `
-    <div class="security-overlay" id="security-overlay">
-      <div class="security-panel">
-        <div class="security-header">
-          <span id="close-security" class="close-link">Close</span>
-        </div>
-        <div class="security-details">
-          <div class="security-section">
-            <div class="security-label">Your public key</div>
-            <div class="security-key-field">${myPublicKey}</div>
-          </div>
-          <div class="security-section">
-            <div class="security-label">Room</div>
-            <div class="security-key-field">${currentRoomId}</div>
-          </div>
-          <div class="security-section">
-            <div class="security-label">Node</div>
-            <div class="security-key-field">nyc3</div>
-          </div>
-          ${peerIds.length > 0 ? `
-            <div class="security-section">
-              <div class="security-label">Peer keys</div>
-              <div class="security-keys-list">${peerKeysHtml}</div>
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    </div>
-  `
-}
 
 function renderTypingIndicator(): string {
   if (typingPeers.size === 0) return ''
@@ -414,7 +372,6 @@ function renderTypingIndicator(): string {
 function renderChat(app: HTMLDivElement): void {
   const peersList = renderPeersList()
   const verificationPanel = renderVerificationPanel()
-  const securityInfo = renderSecurityInfo()
   const theme = getCurrentEffectiveTheme()
 
   const messagesHtml = messages
@@ -437,18 +394,12 @@ function renderChat(app: HTMLDivElement): void {
 
   const peerCount = connection?.getPeerCount() || 0
   const statusText = peerCount === 0 ? 'Waiting for peers.' : ''
-  const connectionIcon = peerCount > 0
-    ? `<svg viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="20.48"><path d="M640 384v64H448a128 128 0 0 0-128 128v128a128 128 0 0 0 128 128h320a128 128 0 0 0 128-128V576a128 128 0 0 0-64-110.848V394.88c74.56 26.368 128 97.472 128 181.056v128a192 192 0 0 1-192 192H448a192 192 0 0 1-192-192V576a192 192 0 0 1 192-192h192z"/><path d="M384 640v-64h192a128 128 0 0 0 128-128V320a128 128 0 0 0-128-128H256a128 128 0 0 0-128 128v128a128 128 0 0 0 64 110.848v70.272A192.064 192.064 0 0 1 64 448V320a192 192 0 0 1 192-192h320a192 192 0 0 1 192 192v128a192 192 0 0 1-192 192H384z"/></svg>`
-    : ''
 
   app.innerHTML = `
     <div class="chat">
       <div class="chat-header">
         <div class="chat-header-left">
           ${peersList || `<span class="status-text">${statusText}</span>`}
-        </div>
-        <div class="chat-header-right">
-          ${connectionIcon ? `<span class="connection-icon" id="connection-icon">${connectionIcon}</span>` : ''}
         </div>
       </div>
       <div class="messages" id="messages">${messagesHtml}</div>
@@ -462,7 +413,6 @@ function renderChat(app: HTMLDivElement): void {
       <a id="theme-toggle">${theme}</a>
     </div>
     ${verificationPanel}
-    ${securityInfo}
   `
   document.getElementById('send-message')?.addEventListener('click', handleSendMessage)
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
@@ -493,11 +443,6 @@ function renderChat(app: HTMLDivElement): void {
     if ((e.target as HTMLElement).id === 'verification-overlay') closeVerificationPanel()
   })
 
-  document.getElementById('connection-icon')?.addEventListener('click', openSecurityInfo)
-  document.getElementById('close-security')?.addEventListener('click', closeSecurityInfo)
-  document.getElementById('security-overlay')?.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).id === 'security-overlay') closeSecurityInfo()
-  })
 }
 
 async function openVerificationPanel(peerId: string): Promise<void> {
@@ -526,16 +471,6 @@ function closeVerificationPanel(): void {
     if (video) stopScanner(video)
   }
   isScanning = false
-  render()
-}
-
-function openSecurityInfo(): void {
-  showSecurityInfo = true
-  render()
-}
-
-function closeSecurityInfo(): void {
-  showSecurityInfo = false
   render()
 }
 
@@ -787,8 +722,7 @@ const SANDBOX_COMPONENTS = [
   'password-error',
   'verification-panel',
   'verification-with-qr',
-  'verification-verified',
-  'security-info'
+  'verification-verified'
 ] as const
 
 type SandboxComponent = typeof SANDBOX_COMPONENTS[number]
@@ -1031,38 +965,6 @@ function renderSandboxComponent(component: SandboxComponent): string {
               <span class="action-link">Show QR</span>
               <span class="action-link">Scan QR</span>
               <span class="verified-text">Verified</span>
-            </div>
-          </div>
-        </div>
-      `
-
-    case 'security-info':
-      return `
-        <div class="security-overlay" style="position: relative; height: 400px;">
-          <div class="security-panel">
-            <div class="security-header">
-              <span class="close-link">Close</span>
-            </div>
-            <div class="security-details">
-              <div class="security-section">
-                <div class="security-label">Your public key</div>
-                <div class="security-key-field">BHmK9xL2pQw7nR4wY8zX3jH6kT9v5sW2fD8xYqPmNbVcXsZaQwErTyUiOpLkJhGfDsAa</div>
-              </div>
-              <div class="security-section">
-                <div class="security-label">Room</div>
-                <div class="security-key-field">abc123def456</div>
-              </div>
-              <div class="security-section">
-                <div class="security-label">Node</div>
-                <div class="security-key-field">nyc3</div>
-              </div>
-              <div class="security-section">
-                <div class="security-label">Peer keys</div>
-                <div class="security-keys-list">
-                  <div class="security-key-field">BKxY7nR4wQ2pK9mL8zX3jH6kT9v5sW2fD8xYqPmNbVcXsZaQwErTyUiOpLkJhGfDsBb</div>
-                  <div class="security-key-field">BL3jH6kT9v5sW2fD8xYqPmNbVcXsZaQwErTyUiOpLkJhGfDsAaBbCcDdEeFfGgHhIiJj</div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
