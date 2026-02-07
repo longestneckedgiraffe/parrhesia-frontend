@@ -127,6 +127,11 @@ let isScanning = false
 
 let showSecurityInfo = false
 
+const TYPING_THROTTLE_MS = 2000
+const TYPING_TIMEOUT_MS = 3000
+let typingPeers: Map<string, { color: PeerColor; timeout: ReturnType<typeof setTimeout> }> = new Map()
+let lastTypingSent = 0
+
 let showPasswordModal = false
 let passwordModalMode: 'setup' | 'unlock' = 'setup'
 let passwordError = ''
@@ -399,6 +404,14 @@ function renderSecurityInfo(): string {
   `
 }
 
+function renderTypingIndicator(): string {
+  if (typingPeers.size === 0) return ''
+  const entries = Array.from(typingPeers.values())
+  return entries.map(p =>
+    `<div class="message typing-indicator color-${p.color}"><span class="peer">${p.color}</span><span class="text"><i>is typing</i></span></div>`
+  ).join('')
+}
+
 function renderChat(app: HTMLDivElement): void {
   const peersList = renderPeersList()
   const verificationPanel = renderVerificationPanel()
@@ -440,6 +453,7 @@ function renderChat(app: HTMLDivElement): void {
         </div>
       </div>
       <div class="messages" id="messages">${messagesHtml}</div>
+      ${renderTypingIndicator()}
       <div class="chat-input">
         <input type="text" id="message-input" placeholder="Type a message..." ${canSend ? '' : 'disabled'}>
         <button id="send-message" ${canSend ? '' : 'disabled'}>Send</button>
@@ -455,6 +469,7 @@ function renderChat(app: HTMLDivElement): void {
   document.getElementById('message-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleSendMessage()
   })
+  document.getElementById('message-input')?.addEventListener('input', handleInputForTyping)
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     toggleTheme()
     render()
@@ -600,6 +615,27 @@ function handleKeyChange(_peerId: string, color: PeerColor): void {
   addSystemMessage(`${color} was blocked due to key change`)
 }
 
+function handleTyping(peerId: string, color: PeerColor): void {
+  const existing = typingPeers.get(peerId)
+  if (existing) clearTimeout(existing.timeout)
+
+  const timeout = setTimeout(() => {
+    typingPeers.delete(peerId)
+    render()
+  }, TYPING_TIMEOUT_MS)
+
+  typingPeers.set(peerId, { color, timeout })
+  render()
+}
+
+function handleInputForTyping(): void {
+  const now = Date.now()
+  if (now - lastTypingSent >= TYPING_THROTTLE_MS && connection) {
+    lastTypingSent = now
+    connection.sendTyping()
+  }
+}
+
 async function handleCreateRoom(): Promise<void> {
   try {
     const roomId = await createRoom()
@@ -687,6 +723,11 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
     },
     (peerId, color, publicKey) => {
       canSend = connection?.canSend() || false
+      const existing = typingPeers.get(peerId)
+      if (existing) {
+        clearTimeout(existing.timeout)
+        typingPeers.delete(peerId)
+      }
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has left', verified)
@@ -698,7 +739,8 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
       }
       addSystemMessage(newStatus)
     },
-    handleKeyChange
+    handleKeyChange,
+    handleTyping
   )
 
   await newConnection.connect(password)
@@ -722,6 +764,7 @@ async function handleSendMessage(): Promise<void> {
   const text = input.value.trim()
   if (!text || !canSend) return
 
+  lastTypingSent = 0
   messages.push({ peerId: myPeerId, color: myColor, text, isMine: true })
   await saveMessages()
   input.value = ''

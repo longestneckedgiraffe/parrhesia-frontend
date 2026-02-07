@@ -7,6 +7,7 @@ export type MessageHandler = (peerId: string, color: PeerColor, message: string)
 export type PeerHandler = (peerId: string, color: PeerColor, publicKey?: string) => void
 export type StatusHandler = (status: string) => void
 export type KeyChangeHandler = (peerId: string, color: PeerColor) => void
+export type TypingHandler = (peerId: string, color: PeerColor) => void
 
 interface WsMessage {
   type: string
@@ -27,6 +28,7 @@ export class ChatConnection {
   private onPeerLeft: PeerHandler
   private onStatus: StatusHandler
   private onKeyChange?: KeyChangeHandler
+  private onTyping?: TypingHandler
 
   constructor(
     roomId: string,
@@ -34,7 +36,8 @@ export class ChatConnection {
     onPeerJoined: PeerHandler,
     onPeerLeft: PeerHandler,
     onStatus: StatusHandler,
-    onKeyChange?: KeyChangeHandler
+    onKeyChange?: KeyChangeHandler,
+    onTyping?: TypingHandler
   ) {
     this.roomId = roomId
     this.keyManager = new GroupKeyManager()
@@ -43,6 +46,7 @@ export class ChatConnection {
     this.onPeerLeft = onPeerLeft
     this.onStatus = onStatus
     this.onKeyChange = onKeyChange
+    this.onTyping = onTyping
   }
 
   async connect(password?: string): Promise<void> {
@@ -174,6 +178,13 @@ export class ChatConnection {
         }
         break
 
+      case 'typing':
+        if (data.peer_id && this.onTyping) {
+          const color = this.keyManager.getPeerColor(data.peer_id)
+          this.onTyping(data.peer_id, color)
+        }
+        break
+
       case 'room_expired':
         this.onStatus('This room has expired')
         break
@@ -203,6 +214,10 @@ export class ChatConnection {
     if (!this.keyManager.hasGroupKey()) return
     const payload = await this.keyManager.encryptMessage(text)
     this.send({ type: 'message', payload })
+  }
+
+  sendTyping(): void {
+    this.send({ type: 'typing' })
   }
 
   disconnect(): void {
