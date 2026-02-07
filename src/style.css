@@ -245,10 +245,33 @@ hr {
 .message .text {
   padding-left: 10px;
   flex: 1;
+  display: flex;
+  align-items: baseline;
 }
 
 .typing-indicator .text {
   color: var(--text-faint);
+}
+
+.receipt {
+  margin-left: auto;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--text-faint);
+  display: inline-block;
+  align-self: center;
+}
+
+.receipt.read {
+  background: #0066cc;
+  border-color: #0066cc;
+}
+
+:root[data-theme="dark"] .receipt.read {
+  background: #6699ff;
+  border-color: #6699ff;
 }
 
 .chat-input {

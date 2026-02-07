@@ -63,6 +63,8 @@ interface Message {
   isSystem?: boolean
   isNotification?: boolean
   verified?: boolean
+  id?: string
+  status?: 'sent' | 'read'
 }
 
 let currentRoomId = ''
@@ -129,6 +131,7 @@ const TYPING_THROTTLE_MS = 2000
 const TYPING_TIMEOUT_MS = 3000
 let typingPeers: Map<string, { color: PeerColor; timeout: ReturnType<typeof setTimeout> }> = new Map()
 let lastTypingSent = 0
+let messageReads: Map<string, Set<string>> = new Map()
 
 let showPasswordModal = false
 let passwordModalMode: 'setup' | 'unlock' = 'setup'
@@ -392,7 +395,10 @@ function renderChat(app: HTMLDivElement): void {
       const isVerified = m.isMine || (m.verified ?? false)
       const colorClass = isVerified ? `color-${m.color}` : 'color-unverified'
       const peerName = m.isMine ? myColor : (isVerified ? m.color : 'unverified')
-      return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
+      const receipt = m.isMine && m.id
+        ? `<span class="receipt${m.status === 'read' ? ' read' : ''}"></span>`
+        : ''
+      return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}${receipt}</span></div>`
     })
     .join('')
 
@@ -566,6 +572,32 @@ function handleTyping(peerId: string, color: PeerColor): void {
   render()
 }
 
+function handleRead(messageIds: string[], peerId: string): void {
+  for (const id of messageIds) {
+    let readers = messageReads.get(id)
+    if (!readers) {
+      readers = new Set()
+      messageReads.set(id, readers)
+    }
+    readers.add(peerId)
+  }
+  recheckReadStatuses()
+  render()
+}
+
+function recheckReadStatuses(): void {
+  const peerCount = connection?.getPeerCount() || 0
+  if (peerCount === 0) return
+  for (const m of messages) {
+    if (m.isMine && m.id && m.status !== 'read') {
+      const readers = messageReads.get(m.id)
+      if (readers && readers.size >= peerCount) {
+        m.status = 'read'
+      }
+    }
+  }
+}
+
 function handleInputForTyping(): void {
   const now = Date.now()
   if (now - lastTypingSent >= TYPING_THROTTLE_MS && connection) {
@@ -645,12 +677,15 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
 
   const newConnection = new ChatConnection(
     roomId,
-    async (peerId, color, text) => {
+    async (peerId, color, text, messageId) => {
       const publicKey = connection?.getPeerPublicKey(peerId)
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
-      messages.push({ peerId, color, text, isMine: false, verified })
+      messages.push({ peerId, color, text, isMine: false, verified, id: messageId })
       await saveMessages()
+      if (messageId && connection) {
+        connection.sendRead([messageId])
+      }
       render()
     },
     (peerId, color, publicKey) => {
@@ -668,6 +703,10 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
         clearTimeout(existing.timeout)
         typingPeers.delete(peerId)
       }
+      for (const readers of messageReads.values()) {
+        readers.delete(peerId)
+      }
+      recheckReadStatuses()
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has left', verified)
@@ -680,7 +719,8 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
       addSystemMessage(newStatus)
     },
     handleKeyChange,
-    handleTyping
+    handleTyping,
+    handleRead
   )
 
   await newConnection.connect(password)
@@ -705,7 +745,8 @@ async function handleSendMessage(): Promise<void> {
   if (!text || !canSend) return
 
   lastTypingSent = 0
-  messages.push({ peerId: myPeerId, color: myColor, text, isMine: true })
+  const messageId = crypto.randomUUID()
+  messages.push({ peerId: myPeerId, color: myColor, text, isMine: true, id: messageId, status: 'sent' })
   await saveMessages()
   input.value = ''
   render()
@@ -714,7 +755,7 @@ async function handleSendMessage(): Promise<void> {
   newInput?.focus()
 
   if (connection) {
-    await connection.sendMessage(text)
+    await connection.sendMessage(text, messageId)
   }
 }
 
@@ -722,6 +763,7 @@ const SANDBOX_COMPONENTS = [
   'landing',
   'chat-empty',
   'chat-with-messages',
+  'chat-read-receipts',
   'chat-with-peers',
   'password-setup',
   'password-unlock',
@@ -818,22 +860,41 @@ function renderSandboxComponent(component: SandboxComponent): string {
                 <span class="color-unverified">unverified</span>
               </div>
             </div>
-            <div class="chat-header-right">
-              <span class="connection-icon">
-                <svg viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="20.48">
-                  <path d="M640 384v64H448a128 128 0 0 0-128 128v128a128 128 0 0 0 128 128h320a128 128 0 0 0 128-128V576a128 128 0 0 0-64-110.848V394.88c74.56 26.368 128 97.472 128 181.056v128a192 192 0 0 1-192 192H448a192 192 0 0 1-192-192V576a192 192 0 0 1 192-192h192z"/>
-                  <path d="M384 640v-64h192a128 128 0 0 0 128-128V320a128 128 0 0 0-128-128H256a128 128 0 0 0-128 128v128a128 128 0 0 0 64 110.848v70.272A192.064 192.064 0 0 1 64 448V320a192 192 0 0 1 192-192h320a192 192 0 0 1 192 192v128a192 192 0 0 1-192 192H384z"/>
-                </svg>
-              </span>
+          </div>
+          <div class="messages">
+            <div class="message notification color-green"><span class="peer">green</span><span class="text">has joined</span></div>
+            <div class="message color-green"><span class="peer">green</span><span class="text">Hello there!</span></div>
+            <div class="message color-blue"><span class="peer">blue</span><span class="text">Hey, how are you?<span class="receipt read"></span></span></div>
+            <div class="message notification color-unverified"><span class="peer">unverified</span><span class="text">has joined</span></div>
+            <div class="message color-unverified"><span class="peer">unverified</span><span class="text">Hi everyone!</span></div>
+            <div class="message color-blue"><span class="peer">blue</span><span class="text">Welcome!<span class="receipt"></span></span></div>
+          </div>
+          <div class="chat-input">
+            <input type="text" placeholder="Type a message...">
+            <button>Send</button>
+          </div>
+        </div>
+      `
+
+    case 'chat-read-receipts':
+      return `
+        <div class="chat">
+          <div class="chat-header">
+            <div class="chat-header-left">
+              <div class="peers-list">
+                <span class="color-blue">blue (you)</span>
+                <span class="color-green">green</span>
+              </div>
             </div>
           </div>
           <div class="messages">
-            <div class="message system"><span class="text">Waiting for others to join</span></div>
             <div class="message notification color-green"><span class="peer">green</span><span class="text">has joined</span></div>
-            <div class="message color-green"><span class="peer">green</span><span class="text">Hello there!</span></div>
-            <div class="message color-blue"><span class="peer">blue</span><span class="text">Hey, how are you?</span></div>
-            <div class="message notification color-unverified"><span class="peer">unverified</span><span class="text">has joined</span></div>
-            <div class="message color-unverified"><span class="peer">unverified</span><span class="text">Hi everyone!</span></div>
+            <div class="message color-blue"><span class="peer">blue</span><span class="text">Hey!<span class="receipt"></span></span></div>
+            <div class="message color-green"><span class="peer">green</span><span class="text">Hi there!</span></div>
+            <div class="message color-blue"><span class="peer">blue</span><span class="text">How are you?<span class="receipt read"></span></span></div>
+            <div class="message color-green"><span class="peer">green</span><span class="text">Good, thanks!</span></div>
+            <div class="message color-blue"><span class="peer">blue</span><span class="text">Great to hear<span class="receipt read"></span></span></div>
+            <div class="message color-blue"><span class="peer">blue</span><span class="text">See you later<span class="receipt"></span></span></div>
           </div>
           <div class="chat-input">
             <input type="text" placeholder="Type a message...">
@@ -853,14 +914,6 @@ function renderSandboxComponent(component: SandboxComponent): string {
                 <span class="peer-item color-red">red</span>
                 <span class="peer-item color-unverified">unverified</span>
               </div>
-            </div>
-            <div class="chat-header-right">
-              <span class="connection-icon">
-                <svg viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="20.48">
-                  <path d="M640 384v64H448a128 128 0 0 0-128 128v128a128 128 0 0 0 128 128h320a128 128 0 0 0 128-128V576a128 128 0 0 0-64-110.848V394.88c74.56 26.368 128 97.472 128 181.056v128a192 192 0 0 1-192 192H448a192 192 0 0 1-192-192V576a192 192 0 0 1 192-192h192z"/>
-                  <path d="M384 640v-64h192a128 128 0 0 0 128-128V320a128 128 0 0 0-128-128H256a128 128 0 0 0-128 128v128a128 128 0 0 0 64 110.848v70.272A192.064 192.064 0 0 1 64 448V320a192 192 0 0 1 192-192h320a192 192 0 0 1 192 192v128a192 192 0 0 1-192 192H384z"/>
-                </svg>
-              </span>
             </div>
           </div>
           <div class="messages"></div>

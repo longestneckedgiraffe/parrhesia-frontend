@@ -3,11 +3,12 @@ import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from './c
 import type { PeerColor } from './crypto'
 import { checkPeerKey, storePeerKey } from './tofu'
 
-export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
+export type MessageHandler = (peerId: string, color: PeerColor, message: string, messageId?: string) => void
 export type PeerHandler = (peerId: string, color: PeerColor, publicKey?: string) => void
 export type StatusHandler = (status: string) => void
 export type KeyChangeHandler = (peerId: string, color: PeerColor) => void
 export type TypingHandler = (peerId: string, color: PeerColor) => void
+export type ReadHandler = (messageIds: string[], peerId: string) => void
 
 interface WsMessage {
   type: string
@@ -16,6 +17,8 @@ interface WsMessage {
   payload?: string
   is_creator?: boolean
   creator_id?: string
+  message_id?: string
+  message_ids?: string[]
 }
 
 export class ChatConnection {
@@ -29,6 +32,7 @@ export class ChatConnection {
   private onStatus: StatusHandler
   private onKeyChange?: KeyChangeHandler
   private onTyping?: TypingHandler
+  private onRead?: ReadHandler
 
   constructor(
     roomId: string,
@@ -37,7 +41,8 @@ export class ChatConnection {
     onPeerLeft: PeerHandler,
     onStatus: StatusHandler,
     onKeyChange?: KeyChangeHandler,
-    onTyping?: TypingHandler
+    onTyping?: TypingHandler,
+    onRead?: ReadHandler
   ) {
     this.roomId = roomId
     this.keyManager = new GroupKeyManager()
@@ -47,6 +52,7 @@ export class ChatConnection {
     this.onStatus = onStatus
     this.onKeyChange = onKeyChange
     this.onTyping = onTyping
+    this.onRead = onRead
   }
 
   async connect(password?: string): Promise<void> {
@@ -171,10 +177,16 @@ export class ChatConnection {
           try {
             const decrypted = await this.keyManager.decryptMessage(data.payload)
             const color = this.keyManager.getPeerColor(data.peer_id)
-            this.onMessage(data.peer_id, color, decrypted)
+            this.onMessage(data.peer_id, color, decrypted, data.message_id)
           } catch {
             console.error('Failed to decrypt message from', data.peer_id)
           }
+        }
+        break
+
+      case 'read':
+        if (data.peer_id && data.message_ids && this.onRead) {
+          this.onRead(data.message_ids, data.peer_id)
         }
         break
 
@@ -210,14 +222,20 @@ export class ChatConnection {
     }
   }
 
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(text: string, messageId?: string): Promise<void> {
     if (!this.keyManager.hasGroupKey()) return
     const payload = await this.keyManager.encryptMessage(text)
-    this.send({ type: 'message', payload })
+    this.send({ type: 'message', payload, message_id: messageId })
   }
 
   sendTyping(): void {
     this.send({ type: 'typing' })
+  }
+
+  sendRead(messageIds: string[]): void {
+    if (messageIds.length > 0) {
+      this.send({ type: 'read', message_ids: messageIds })
+    }
   }
 
   disconnect(): void {
