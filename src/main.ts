@@ -132,6 +132,7 @@ const TYPING_TIMEOUT_MS = 3000
 let typingPeers: Map<string, { color: PeerColor; timeout: ReturnType<typeof setTimeout> }> = new Map()
 let lastTypingSent = 0
 let messageReads: Map<string, Set<string>> = new Map()
+let unreadMessageIds: string[] = []
 
 let showPasswordModal = false
 let passwordModalMode: 'setup' | 'unlock' = 'setup'
@@ -683,8 +684,12 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
       const verified = stored?.status === 'verified'
       messages.push({ peerId, color, text, isMine: false, verified, id: messageId })
       await saveMessages()
-      if (messageId && connection) {
-        connection.sendRead([messageId])
+      if (messageId) {
+        if (document.hasFocus() && connection) {
+          connection.sendRead([messageId])
+        } else {
+          unreadMessageIds.push(messageId)
+        }
       }
       render()
     },
@@ -1067,6 +1072,19 @@ async function init(): Promise<void> {
       status = 'Room does not exist or has expired'
     }
   }
+
+  function flushUnreadReceipts(): void {
+    if (unreadMessageIds.length > 0 && connection) {
+      connection.sendRead(unreadMessageIds)
+      unreadMessageIds = []
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') flushUnreadReceipts()
+  })
+
+  window.addEventListener('focus', flushUnreadReceipts)
 
   render()
 }
