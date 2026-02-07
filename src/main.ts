@@ -363,10 +363,14 @@ function renderVerificationPanel(): string {
 
 function renderTypingIndicator(): string {
   if (typingPeers.size === 0) return ''
-  const entries = Array.from(typingPeers.values())
-  return entries.map(p =>
-    `<div class="message typing-indicator color-${p.color}"><span class="peer">${p.color}</span><span class="text"><i>is typing</i></span></div>`
-  ).join('')
+  return Array.from(typingPeers.entries()).map(([peerId, p]) => {
+    const publicKey = connection?.getPeerPublicKey(peerId)
+    const stored = publicKey ? getStoredPeerKey(currentRoomId, peerId, publicKey) : null
+    const isVerified = stored?.status === 'verified'
+    const colorClass = isVerified ? `color-${p.color}` : 'color-unverified'
+    const peerName = isVerified ? p.color : 'unverified'
+    return `<div class="message typing-indicator ${colorClass}"><span class="peer">${peerName}</span><span class="text"><i>is typing</i></span></div>`
+  }).join('')
 }
 
 function renderChat(app: HTMLDivElement): void {
