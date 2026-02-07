@@ -99,9 +99,8 @@ async function loadMessages(roomId: string): Promise<Message[]> {
   }
 }
 
-async function addSystemMessage(text: string): Promise<void> {
-  messages.push({ peerId: 'system', color: 'blue', text, isMine: false, isSystem: true })
-  await saveMessages()
+function addSystemMessage(text: string): void {
+  console.log(`[parrhesia] ${text}`)
   render()
 }
 
@@ -421,7 +420,7 @@ function renderChat(app: HTMLDivElement): void {
   const messagesHtml = messages
     .map(m => {
       if (m.isSystem) {
-        return `<div class="message system"><span class="text">${m.text}</span></div>`
+        return ''
       }
       if (m.isNotification) {
         const isVerified = m.verified ?? false
