@@ -396,10 +396,8 @@ function renderChat(app: HTMLDivElement): void {
       const isVerified = m.isMine || (m.verified ?? false)
       const colorClass = isVerified ? `color-${m.color}` : 'color-unverified'
       const peerName = m.isMine ? myColor : (isVerified ? m.color : 'unverified')
-      const receipt = m.isMine && m.id
-        ? `<span class="receipt${m.status === 'read' ? ' read' : ''}"></span>`
-        : ''
-      return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}${receipt}</span></div>`
+      const statusClass = m.isMine && m.id ? (m.status === 'read' ? ' read' : ' sent') : ''
+      return `<div class="message ${colorClass}${statusClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
     })
     .join('')
 
@@ -869,10 +867,10 @@ function renderSandboxComponent(component: SandboxComponent): string {
           <div class="messages">
             <div class="message notification color-green"><span class="peer">green</span><span class="text">has joined</span></div>
             <div class="message color-green"><span class="peer">green</span><span class="text">Hello there!</span></div>
-            <div class="message color-blue"><span class="peer">blue</span><span class="text">Hey, how are you?<span class="receipt read"></span></span></div>
+            <div class="message color-blue read"><span class="peer">blue</span><span class="text">Hey, how are you?</span></div>
             <div class="message notification color-unverified"><span class="peer">unverified</span><span class="text">has joined</span></div>
             <div class="message color-unverified"><span class="peer">unverified</span><span class="text">Hi everyone!</span></div>
-            <div class="message color-blue"><span class="peer">blue</span><span class="text">Welcome!<span class="receipt"></span></span></div>
+            <div class="message color-blue sent"><span class="peer">blue</span><span class="text">Welcome!</span></div>
           </div>
           <div class="chat-input">
             <input type="text" placeholder="Type a message...">
@@ -894,12 +892,12 @@ function renderSandboxComponent(component: SandboxComponent): string {
           </div>
           <div class="messages">
             <div class="message notification color-green"><span class="peer">green</span><span class="text">has joined</span></div>
-            <div class="message color-blue"><span class="peer">blue</span><span class="text">Hey!<span class="receipt"></span></span></div>
+            <div class="message color-blue sent"><span class="peer">blue</span><span class="text">Hey!</span></div>
             <div class="message color-green"><span class="peer">green</span><span class="text">Hi there!</span></div>
-            <div class="message color-blue"><span class="peer">blue</span><span class="text">How are you?<span class="receipt read"></span></span></div>
+            <div class="message color-blue read"><span class="peer">blue</span><span class="text">How are you?</span></div>
             <div class="message color-green"><span class="peer">green</span><span class="text">Good, thanks!</span></div>
-            <div class="message color-blue"><span class="peer">blue</span><span class="text">Great to hear<span class="receipt read"></span></span></div>
-            <div class="message color-blue"><span class="peer">blue</span><span class="text">See you later<span class="receipt"></span></span></div>
+            <div class="message color-blue read"><span class="peer">blue</span><span class="text">Great to hear</span></div>
+            <div class="message color-blue sent"><span class="peer">blue</span><span class="text">See you later</span></div>
           </div>
           <div class="chat-input">
             <input type="text" placeholder="Type a message...">
