@@ -14,7 +14,9 @@ interface WsMessage {
   type: string
   peer_id?: string
   public_key?: string
+  pq_public_key?: string
   payload?: string
+  pq_ciphertext?: string
   is_creator?: boolean
   creator_id?: string
   message_id?: string
@@ -89,7 +91,12 @@ export class ChatConnection {
           this.onStatus('Waiting for encryption key')
         }
 
-        this.send({ type: 'key_announce', public_key: publicKey })
+        const pqPublicKey = this.keyManager.getMlKemPublicKeyBase64()
+        this.send({
+          type: 'key_announce',
+          public_key: publicKey,
+          ...(pqPublicKey && { pq_public_key: pqPublicKey })
+        })
         break
 
       case 'peer_key':
@@ -112,7 +119,7 @@ export class ChatConnection {
             storePeerKey(this.roomId, data.peer_id, data.public_key)
           }
 
-          await this.keyManager.addPeer(data.peer_id, data.public_key)
+          await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key)
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
@@ -142,7 +149,7 @@ export class ChatConnection {
             storePeerKey(this.roomId, data.peer_id, data.public_key)
           }
 
-          await this.keyManager.addPeer(data.peer_id, data.public_key)
+          await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key)
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
@@ -164,7 +171,7 @@ export class ChatConnection {
       case 'key_share':
         if (data.peer_id && data.payload) {
           try {
-            await this.keyManager.receiveGroupKey(data.peer_id, data.payload)
+            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext)
             this.onStatus('Ready to chat')
           } catch (e) {
             console.error('Failed to receive group key:', e)
@@ -209,8 +216,13 @@ export class ChatConnection {
 
   private async sendGroupKeyToPeer(peerId: string): Promise<void> {
     try {
-      const encryptedGroupKey = await this.keyManager.encryptGroupKeyForPeer(peerId)
-      this.send({ type: 'key_share', target_peer_id: peerId, payload: encryptedGroupKey })
+      const { encrypted_group_key, pq_ciphertext } = await this.keyManager.encryptGroupKeyForPeer(peerId)
+      this.send({
+        type: 'key_share',
+        target_peer_id: peerId,
+        payload: encrypted_group_key,
+        ...(pq_ciphertext && { pq_ciphertext })
+      })
     } catch (e) {
       console.error('Failed to send group key to peer:', e)
     }
