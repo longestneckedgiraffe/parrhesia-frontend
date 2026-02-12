@@ -92,10 +92,11 @@ export class ChatConnection {
         }
 
         const pqPublicKey = this.keyManager.getMlKemPublicKeyBase64()
+        if (!pqPublicKey) throw new Error('ML-KEM key pair not initialized')
         this.send({
           type: 'key_announce',
           public_key: publicKey,
-          ...(pqPublicKey && { pq_public_key: pqPublicKey })
+          pq_public_key: pqPublicKey
         })
         break
 
@@ -103,6 +104,10 @@ export class ChatConnection {
         if (data.peer_id && data.public_key) {
           if (!isValidPublicKey(data.public_key)) {
             console.error('Received invalid public key from peer', data.peer_id)
+            return
+          }
+          if (!data.pq_public_key) {
+            this.onStatus('A peer was rejected: no post-quantum key support')
             return
           }
           const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
@@ -133,6 +138,10 @@ export class ChatConnection {
         if (data.peer_id && data.public_key) {
           if (!isValidPublicKey(data.public_key)) {
             console.error('Received invalid public key from peer', data.peer_id)
+            return
+          }
+          if (!data.pq_public_key) {
+            this.onStatus('A peer was rejected: no post-quantum key support')
             return
           }
           const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
@@ -169,13 +178,15 @@ export class ChatConnection {
         break
 
       case 'key_share':
-        if (data.peer_id && data.payload) {
+        if (data.peer_id && data.payload && data.pq_ciphertext) {
           try {
             await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext)
             this.onStatus('Ready to chat')
           } catch (e) {
             console.error('Failed to receive group key:', e)
           }
+        } else if (data.peer_id && data.payload && !data.pq_ciphertext) {
+          this.onStatus('Rejected key share: no post-quantum ciphertext')
         }
         break
 
@@ -221,7 +232,7 @@ export class ChatConnection {
         type: 'key_share',
         target_peer_id: peerId,
         payload: encrypted_group_key,
-        ...(pq_ciphertext && { pq_ciphertext })
+        pq_ciphertext
       })
     } catch (e) {
       console.error('Failed to send group key to peer:', e)

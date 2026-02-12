@@ -12,7 +12,7 @@ export interface MlKemKeyPair {
 
 export interface HybridKeySharePayload {
   encrypted_group_key: string
-  pq_ciphertext?: string   // present only when hybrid path used
+  pq_ciphertext: string
 }
 
 export const PEER_COLORS = [
@@ -107,7 +107,7 @@ export async function loadKeyPairWithPassword(password: string): Promise<{ keyPa
         ['deriveKey', 'deriveBits']
       )
     } catch {
-      privateKey = await crypto.subtle.unwrapKey(
+      const legacyKey = await crypto.subtle.unwrapKey(
         'jwk',
         wrappedKey,
         wrappingKey,
@@ -116,6 +116,9 @@ export async function loadKeyPairWithPassword(password: string): Promise<{ keyPa
         true,
         ['deriveKey']
       )
+      const jwk = await crypto.subtle.exportKey('jwk', legacyKey)
+      jwk.key_ops = ['deriveKey', 'deriveBits']
+      privateKey = await crypto.subtle.importKey('jwk', jwk, ECDH_PARAMS, true, ['deriveKey', 'deriveBits'])
     }
 
     const publicKey = await importPublicKey(data.publicKey)
@@ -279,7 +282,10 @@ async function loadKeyPairFromStorage(): Promise<{ keyPair: KeyPair; publicKey: 
     try {
       privateKey = await importPrivateKey(data.privateKey)
     } catch {
-      privateKey = await crypto.subtle.importKey('jwk', data.privateKey, ECDH_PARAMS, true, ['deriveKey'])
+      const legacyKey = await crypto.subtle.importKey('jwk', data.privateKey, ECDH_PARAMS, true, ['deriveKey'])
+      const jwk = await crypto.subtle.exportKey('jwk', legacyKey)
+      jwk.key_ops = ['deriveKey', 'deriveBits']
+      privateKey = await crypto.subtle.importKey('jwk', jwk, ECDH_PARAMS, true, ['deriveKey', 'deriveBits'])
     }
     const publicKey = await importPublicKey(data.publicKey)
     return {
@@ -331,16 +337,6 @@ export async function importGroupKey(base64Key: string): Promise<CryptoKey> {
     bytes[i] = binaryString.charCodeAt(i)
   }
   return crypto.subtle.importKey('raw', bytes, AES_PARAMS, true, ['encrypt', 'decrypt'])
-}
-
-export async function deriveSharedKey(privateKey: CryptoKey, publicKey: CryptoKey): Promise<CryptoKey> {
-  return crypto.subtle.deriveKey(
-    { name: 'ECDH', public: publicKey },
-    privateKey,
-    AES_PARAMS,
-    false,
-    ['encrypt', 'decrypt']
-  )
 }
 
 export async function encrypt(key: CryptoKey, plaintext: string): Promise<string> {
@@ -453,7 +449,6 @@ export class GroupKeyManager {
   private keyPair: KeyPair | null = null
   private myPublicKey: string = ''
   private myColor: PeerColor = 'blue'
-  private peerSharedKeys: Map<string, CryptoKey> = new Map()
   private peerPublicKeys: Map<string, string> = new Map()
   private peerColors: Map<string, PeerColor> = new Map()
   private colorPreferences: Map<string, PeerColor[]> = new Map()
@@ -462,7 +457,6 @@ export class GroupKeyManager {
   private creatorId: string = ''
   private mlKemKeyPair: MlKemKeyPair | null = null
   private peerMlKemPublicKeys: Map<string, Uint8Array> = new Map()
-  private canDeriveBits: boolean = false
 
   async initialize(password?: string): Promise<string> {
     const { keyPair, publicKey } = await getOrCreateKeyPair(password)
@@ -472,21 +466,7 @@ export class GroupKeyManager {
     this.colorPreferences.set(publicKey, prefs)
     this.myColor = prefs[0]
 
-    // test if deriveBits is available on this key
-    try {
-      const testPub = await crypto.subtle.importKey('raw',
-        await crypto.subtle.exportKey('raw', keyPair.publicKey),
-        ECDH_PARAMS, true, [])
-      await crypto.subtle.deriveBits({ name: 'ECDH', public: testPub }, keyPair.privateKey, 256)
-      this.canDeriveBits = true
-    } catch {
-      this.canDeriveBits = false
-    }
-
-    // generate ephemeral ML-KEM keypair
-    if (this.canDeriveBits) {
-      this.mlKemKeyPair = await generateMlKemKeyPair()
-    }
+    this.mlKemKeyPair = await generateMlKemKeyPair()
 
     return publicKey
   }
@@ -504,15 +484,11 @@ export class GroupKeyManager {
     this.groupKey = await generateGroupKey()
   }
 
-  async addPeer(peerId: string, publicKeyBase64: string, pqPublicKeyBase64?: string): Promise<void> {
+  async addPeer(peerId: string, publicKeyBase64: string, pqPublicKeyBase64: string): Promise<void> {
     if (!this.keyPair) throw new Error('Key pair not initialized')
-    const peerPublicKey = await importPublicKey(publicKeyBase64)
-    const sharedKey = await deriveSharedKey(this.keyPair.privateKey, peerPublicKey)
-    this.peerSharedKeys.set(peerId, sharedKey)
+    if (!isValidMlKemPublicKey(pqPublicKeyBase64)) throw new Error('Invalid ML-KEM public key')
     this.peerPublicKeys.set(peerId, publicKeyBase64)
-    if (pqPublicKeyBase64 && isValidMlKemPublicKey(pqPublicKeyBase64)) {
-      this.peerMlKemPublicKeys.set(peerId, base64ToUint8Array(pqPublicKeyBase64))
-    }
+    this.peerMlKemPublicKeys.set(peerId, base64ToUint8Array(pqPublicKeyBase64))
     if (!this.colorPreferences.has(publicKeyBase64)) {
       this.colorPreferences.set(publicKeyBase64, await deriveColorPreferences(publicKeyBase64))
     }
@@ -521,7 +497,6 @@ export class GroupKeyManager {
 
   removePeer(peerId: string): void {
     const pubKey = this.peerPublicKeys.get(peerId)
-    this.peerSharedKeys.delete(peerId)
     this.peerPublicKeys.delete(peerId)
     this.peerColors.delete(peerId)
     this.peerMlKemPublicKeys.delete(peerId)
@@ -559,50 +534,30 @@ export class GroupKeyManager {
   async encryptGroupKeyForPeer(peerId: string): Promise<HybridKeySharePayload> {
     if (!this.groupKey) throw new Error('Group key not set')
     if (!this.keyPair) throw new Error('Key pair not initialized')
-    const exportedGroupKey = await exportGroupKey(this.groupKey)
-
     const peerMlKemPub = this.peerMlKemPublicKeys.get(peerId)
-    if (peerMlKemPub && this.canDeriveBits) {
-      const peerEcdhPub = await importPublicKey(this.peerPublicKeys.get(peerId)!)
-      const ecdhBits = await deriveEcdhBits(this.keyPair.privateKey, peerEcdhPub)
-      const { ciphertext, sharedSecret } = await mlKemEncapsulate(peerMlKemPub)
-      const hybridKey = await deriveHybridKey(ecdhBits, sharedSecret)
-      const encryptedGroupKey = await encrypt(hybridKey, exportedGroupKey)
-      console.log(`[PQ] Hybrid key exchange with peer ${peerId}`)
-      return {
-        encrypted_group_key: encryptedGroupKey,
-        pq_ciphertext: uint8ArrayToBase64(ciphertext)
-      }
+    if (!peerMlKemPub) throw new Error(`No ML-KEM public key for peer ${peerId}`)
+    const exportedGroupKey = await exportGroupKey(this.groupKey)
+    const peerEcdhPub = await importPublicKey(this.peerPublicKeys.get(peerId)!)
+    const ecdhBits = await deriveEcdhBits(this.keyPair.privateKey, peerEcdhPub)
+    const { ciphertext, sharedSecret } = await mlKemEncapsulate(peerMlKemPub)
+    const hybridKey = await deriveHybridKey(ecdhBits, sharedSecret)
+    const encryptedGroupKey = await encrypt(hybridKey, exportedGroupKey)
+    return {
+      encrypted_group_key: encryptedGroupKey,
+      pq_ciphertext: uint8ArrayToBase64(ciphertext)
     }
-
-    // fallback
-    const sharedKey = this.peerSharedKeys.get(peerId)
-    if (!sharedKey) throw new Error(`No shared key for peer ${peerId}`)
-    const encryptedGroupKey = await encrypt(sharedKey, exportedGroupKey)
-    console.log(`[PQ] ECDH-only key exchange with peer ${peerId}`)
-    return { encrypted_group_key: encryptedGroupKey }
   }
 
-  async receiveGroupKey(fromPeerId: string, encryptedGroupKey: string, pqCiphertext?: string): Promise<void> {
+  async receiveGroupKey(fromPeerId: string, encryptedGroupKey: string, pqCiphertext: string): Promise<void> {
     if (!this.keyPair) throw new Error('Key pair not initialized')
-
-    if (pqCiphertext && this.mlKemKeyPair && this.canDeriveBits) {
-      const peerEcdhPub = await importPublicKey(this.peerPublicKeys.get(fromPeerId)!)
-      const ecdhBits = await deriveEcdhBits(this.keyPair.privateKey, peerEcdhPub)
-      const ct = base64ToUint8Array(pqCiphertext)
-      const mlkemSS = await mlKemDecapsulate(ct, this.mlKemKeyPair.secretKey)
-      const hybridKey = await deriveHybridKey(ecdhBits, mlkemSS)
-      const groupKeyBase64 = await decrypt(hybridKey, encryptedGroupKey)
-      this.groupKey = await importGroupKey(groupKeyBase64)
-      console.log(`[PQ] Hybrid key received from peer ${fromPeerId}`)
-      return
-    }
-
-    const sharedKey = this.peerSharedKeys.get(fromPeerId)
-    if (!sharedKey) throw new Error(`No shared key for peer ${fromPeerId}`)
-    const groupKeyBase64 = await decrypt(sharedKey, encryptedGroupKey)
+    if (!this.mlKemKeyPair) throw new Error('ML-KEM key pair not initialized')
+    const peerEcdhPub = await importPublicKey(this.peerPublicKeys.get(fromPeerId)!)
+    const ecdhBits = await deriveEcdhBits(this.keyPair.privateKey, peerEcdhPub)
+    const ct = base64ToUint8Array(pqCiphertext)
+    const mlkemSS = await mlKemDecapsulate(ct, this.mlKemKeyPair.secretKey)
+    const hybridKey = await deriveHybridKey(ecdhBits, mlkemSS)
+    const groupKeyBase64 = await decrypt(hybridKey, encryptedGroupKey)
     this.groupKey = await importGroupKey(groupKeyBase64)
-    console.log(`[PQ] ECDH-only key received from peer ${fromPeerId}`)
   }
 
   async encryptMessage(message: string): Promise<string> {
@@ -628,11 +583,11 @@ export class GroupKeyManager {
   }
 
   getPeerIds(): string[] {
-    return Array.from(this.peerSharedKeys.keys())
+    return Array.from(this.peerPublicKeys.keys())
   }
 
   hasPeers(): boolean {
-    return this.peerSharedKeys.size > 0
+    return this.peerPublicKeys.size > 0
   }
 
   getMyPublicKey(): string {
@@ -648,7 +603,4 @@ export class GroupKeyManager {
     return uint8ArrayToBase64(this.mlKemKeyPair.publicKey)
   }
 
-  hasPqSupport(peerId: string): boolean {
-    return this.peerMlKemPublicKeys.has(peerId) && this.canDeriveBits
-  }
 }
