@@ -21,6 +21,7 @@ interface WsMessage {
   creator_id?: string
   message_id?: string
   message_ids?: string[]
+  sig?: string
 }
 
 export class ChatConnection {
@@ -93,10 +94,12 @@ export class ChatConnection {
 
         const pqPublicKey = this.keyManager.getMlKemPublicKeyBase64()
         if (!pqPublicKey) throw new Error('ML-KEM key pair not initialized')
+        const sig = this.keyManager.signMlKemPublicKey()
         this.send({
           type: 'key_announce',
           public_key: publicKey,
-          pq_public_key: pqPublicKey
+          pq_public_key: pqPublicKey,
+          sig: sig || undefined
         })
         break
 
@@ -124,7 +127,13 @@ export class ChatConnection {
             storePeerKey(this.roomId, data.peer_id, data.public_key)
           }
 
-          await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key)
+          try {
+            await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key, data.sig)
+          } catch (e) {
+            console.error('Peer rejected:', e)
+            this.onStatus('A peer was rejected: invalid signature')
+            return
+          }
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
@@ -144,9 +153,9 @@ export class ChatConnection {
             this.onStatus('A peer was rejected: no post-quantum key support')
             return
           }
-          const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
+          const keyCheck2 = checkPeerKey(this.roomId, data.peer_id, data.public_key)
 
-          if (keyCheck.status === 'key_changed') {
+          if (keyCheck2.status === 'key_changed') {
             if (this.onKeyChange) {
               const color = await deriveColorFromPublicKey(data.public_key)
               this.onKeyChange(data.peer_id, color)
@@ -154,11 +163,17 @@ export class ChatConnection {
             return
           }
 
-          if (keyCheck.isNewKey) {
+          if (keyCheck2.isNewKey) {
             storePeerKey(this.roomId, data.peer_id, data.public_key)
           }
 
-          await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key)
+          try {
+            await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key, data.sig)
+          } catch (e) {
+            console.error('Peer rejected:', e)
+            this.onStatus('A peer was rejected: invalid signature')
+            return
+          }
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
@@ -180,10 +195,11 @@ export class ChatConnection {
       case 'key_share':
         if (data.peer_id && data.payload && data.pq_ciphertext) {
           try {
-            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext)
+            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext, data.sig)
             this.onStatus('Ready to chat')
           } catch (e) {
             console.error('Failed to receive group key:', e)
+            this.onStatus('Failed to receive encryption key')
           }
         } else if (data.peer_id && data.payload && !data.pq_ciphertext) {
           this.onStatus('Rejected key share: no post-quantum ciphertext')
@@ -227,12 +243,13 @@ export class ChatConnection {
 
   private async sendGroupKeyToPeer(peerId: string): Promise<void> {
     try {
-      const { encrypted_group_key, pq_ciphertext } = await this.keyManager.encryptGroupKeyForPeer(peerId)
+      const { encrypted_group_key, pq_ciphertext, sig } = await this.keyManager.encryptGroupKeyForPeer(peerId)
       this.send({
         type: 'key_share',
         target_peer_id: peerId,
         payload: encrypted_group_key,
-        pq_ciphertext
+        pq_ciphertext,
+        sig
       })
     } catch (e) {
       console.error('Failed to send group key to peer:', e)

@@ -17,6 +17,7 @@
     "vite": "npm:rolldown-vite@7.2.5"
   },
   "dependencies": {
+    "@noble/post-quantum": "^0.5.4",
     "jsqr": "^1.4.0",
     "mlkem": "^2.5.0",
     "qrcode": "^1.5.4"
