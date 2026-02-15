@@ -54,11 +54,11 @@ export function isValidPublicKey(base64Key: string): boolean {
 }
 
 export function sign(secretKey: Uint8Array, data: Uint8Array): Uint8Array {
-  return ml_dsa65.sign(secretKey, data)
+  return ml_dsa65.sign(data, secretKey)
 }
 
 export function verify(publicKey: Uint8Array, data: Uint8Array, signature: Uint8Array): boolean {
-  return ml_dsa65.verify(publicKey, data, signature)
+  return ml_dsa65.verify(signature, data, publicKey)
 }
 
 export function generateSigningKeyPair(): SigningKeyPair {
