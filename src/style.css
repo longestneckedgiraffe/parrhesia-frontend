@@ -541,12 +541,17 @@ hr {
 
 @media (max-width: 480px) {
   body {
-    margin: 0.5em;
+    margin: 0;
+    overflow: hidden;
+    height: 100vh;
+    height: 100dvh;
   }
 
   .landing {
-    min-height: calc(100dvh - 1em);
-    min-height: calc(100vh - 1em);
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 0.5em;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -578,8 +583,23 @@ hr {
   }
 
   .chat {
-    height: calc(100dvh - 1em);
-    height: calc(100vh - 1em);
+    height: 100vh;
+    height: 100dvh;
+    padding: 0.5em;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .chat-header {
+    flex-shrink: 0;
+  }
+
+  .chat-input {
+    flex-shrink: 0;
+  }
+
+  .messages {
+    -webkit-overflow-scrolling: touch;
   }
 
   .chat-input input,
@@ -588,12 +608,17 @@ hr {
   }
 
   .message .peer {
-    width: 50px;
+    width: 60px;
     padding-right: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .message .text {
     padding-left: 6px;
+    min-width: 0;
+    overflow-wrap: break-word;
   }
 
   .footer-links {
