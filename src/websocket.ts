@@ -22,6 +22,8 @@ interface WsMessage {
   message_id?: string
   message_ids?: string[]
   sig?: string
+  epoch?: number
+  counter?: number
 }
 
 export class ChatConnection {
@@ -36,6 +38,8 @@ export class ChatConnection {
   private onKeyChange?: KeyChangeHandler
   private onTyping?: TypingHandler
   private onRead?: ReadHandler
+  private messagesSinceRekey: number = 0
+  private rekeyInterval: number = 50
 
   constructor(
     roomId: string,
@@ -83,7 +87,7 @@ export class ChatConnection {
         this.peerId = data.peer_id || ''
         const isCreator = data.is_creator || false
         const creatorId = data.creator_id || ''
-        this.keyManager.setCreatorStatus(isCreator, creatorId)
+        this.keyManager.setCreatorStatus(isCreator, creatorId, this.peerId)
 
         if (isCreator) {
           await this.keyManager.generateAndSetGroupKey()
@@ -189,13 +193,16 @@ export class ChatConnection {
           const publicKey = this.keyManager.getPeerPublicKey(data.peer_id)
           this.keyManager.removePeer(data.peer_id)
           this.onPeerLeft(data.peer_id, color, publicKey)
+          if (this.keyManager.shouldInitiateRekey() && this.keyManager.hasPeers()) {
+            await this.sendRekey()
+          }
         }
         break
 
       case 'key_share':
         if (data.peer_id && data.payload && data.pq_ciphertext) {
           try {
-            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext, data.sig)
+            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext, data.sig, data.epoch)
             this.onStatus('Ready to chat')
           } catch (e) {
             console.error('Failed to receive group key:', e)
@@ -206,10 +213,23 @@ export class ChatConnection {
         }
         break
 
+      case 'rekey':
+        if (data.peer_id && data.payload && data.pq_ciphertext) {
+          try {
+            this.keyManager.savePreviousEpochChains()
+            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext, data.sig, data.epoch)
+            this.messagesSinceRekey = 0
+            this.onStatus('Encryption key rotated')
+          } catch (e) {
+            console.error('Failed to process rekey:', e)
+          }
+        }
+        break
+
       case 'message':
         if (data.peer_id && data.payload) {
           try {
-            const decrypted = await this.keyManager.decryptMessage(data.payload)
+            const decrypted = await this.keyManager.decryptMessage(data.peer_id, data.payload, data.epoch ?? 0, data.counter ?? 0)
             const color = this.keyManager.getPeerColor(data.peer_id)
             this.onMessage(data.peer_id, color, decrypted, data.message_id)
           } catch {
@@ -249,10 +269,31 @@ export class ChatConnection {
         target_peer_id: peerId,
         payload: encrypted_group_key,
         pq_ciphertext,
-        sig
+        sig,
+        epoch: this.keyManager.getEpoch()
       })
     } catch (e) {
       console.error('Failed to send group key to peer:', e)
+    }
+  }
+
+  private async sendRekey(): Promise<void> {
+    try {
+      await this.keyManager.initiateRekey()
+      for (const peerId of this.keyManager.getPeerIds()) {
+        const { encrypted_group_key, pq_ciphertext, sig } = await this.keyManager.encryptGroupKeyForPeer(peerId)
+        this.send({
+          type: 'rekey',
+          target_peer_id: peerId,
+          payload: encrypted_group_key,
+          pq_ciphertext,
+          sig,
+          epoch: this.keyManager.getEpoch()
+        })
+      }
+      this.messagesSinceRekey = 0
+    } catch (e) {
+      console.error('Failed to send rekey:', e)
     }
   }
 
@@ -263,9 +304,13 @@ export class ChatConnection {
   }
 
   async sendMessage(text: string, messageId?: string): Promise<void> {
-    if (!this.keyManager.hasGroupKey()) return
-    const payload = await this.keyManager.encryptMessage(text)
-    this.send({ type: 'message', payload, message_id: messageId })
+    if (!this.keyManager.hasChain()) return
+    const { payload, epoch, counter } = await this.keyManager.encryptMessage(text)
+    this.send({ type: 'message', payload, message_id: messageId, epoch, counter })
+    this.messagesSinceRekey++
+    if (this.messagesSinceRekey >= this.rekeyInterval && this.keyManager.shouldInitiateRekey() && this.keyManager.hasPeers()) {
+      await this.sendRekey()
+    }
   }
 
   sendTyping(): void {
@@ -294,7 +339,7 @@ export class ChatConnection {
   }
 
   canSend(): boolean {
-    return this.keyManager.hasGroupKey() && this.keyManager.hasPeers()
+    return this.keyManager.hasChain() && this.keyManager.hasPeers()
   }
 
   getMyColor(): PeerColor {

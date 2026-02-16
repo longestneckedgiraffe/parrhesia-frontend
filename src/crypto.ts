@@ -33,9 +33,18 @@ const KEM_INFO = new TextEncoder().encode('parrhesia-kem-v2')
 const KEM_SALT = new Uint8Array(32)
 
 const PBKDF2_ITERATIONS = 600000
+const CHAIN_SALT = new Uint8Array(32)
+const MAX_SKIP = 100
+
 const STORAGE_KEY = 'parrhesia-keypair'
 const WRAPPED_STORAGE_KEY = 'parrhesia-keypair-wrapped'
 const MESSAGE_SALT_KEY = 'parrhesia-message-salt'
+
+interface ChainState {
+  chainKey: Uint8Array
+  counter: number
+  skippedKeys: Map<number, CryptoKey>
+}
 
 interface WrappedKeyData {
   encryptedKey: string
@@ -82,6 +91,34 @@ export async function deriveKemKey(mlkemSS: Uint8Array): Promise<CryptoKey> {
     false,
     ['encrypt', 'decrypt']
   )
+}
+
+async function deriveChainKey(groupKeyBytes: Uint8Array, peerId: string): Promise<Uint8Array> {
+  const keyMaterial = await crypto.subtle.importKey('raw', groupKeyBytes as BufferSource, 'HKDF', false, ['deriveBits'])
+  const info = new TextEncoder().encode('parrhesia-chain-' + peerId)
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', salt: CHAIN_SALT as BufferSource, info: info as BufferSource, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  )
+  return new Uint8Array(bits)
+}
+
+async function ratchetChain(chainKey: Uint8Array): Promise<{messageKey: CryptoKey, nextChainKey: Uint8Array}> {
+  const keyMaterial = await crypto.subtle.importKey('raw', chainKey as BufferSource, 'HKDF', false, ['deriveKey', 'deriveBits'])
+  const messageKey = await crypto.subtle.deriveKey(
+    { name: 'HKDF', salt: CHAIN_SALT as BufferSource, info: new TextEncoder().encode('msg') as BufferSource, hash: 'SHA-256' },
+    keyMaterial,
+    AES_PARAMS,
+    false,
+    ['encrypt', 'decrypt']
+  )
+  const nextBits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', salt: CHAIN_SALT as BufferSource, info: new TextEncoder().encode('chain') as BufferSource, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  )
+  return { messageKey, nextChainKey: new Uint8Array(nextBits) }
 }
 
 function isLegacyStoredFormat(data: unknown): boolean {
@@ -435,6 +472,12 @@ export class GroupKeyManager {
   private creatorId: string = ''
   private mlKemKeyPair: MlKemKeyPair | null = null
   private peerMlKemPublicKeys: Map<string, Uint8Array> = new Map()
+  private myPeerId: string = ''
+  private epoch: number = 0
+  private myChainState: ChainState | null = null
+  private peerChainStates: Map<string, ChainState> = new Map()
+  private previousEpochChains: Map<string, ChainState> | null = null
+  private previousEpochTimeout: ReturnType<typeof setTimeout> | null = null
 
   async initialize(password?: string): Promise<string> {
     const { keyPair, publicKey } = await getOrCreateKeyPair(password)
@@ -453,13 +496,39 @@ export class GroupKeyManager {
     return this.myColor
   }
 
-  setCreatorStatus(isCreator: boolean, creatorId: string): void {
+  setCreatorStatus(isCreator: boolean, creatorId: string, myPeerId: string): void {
     this.isCreator = isCreator
     this.creatorId = creatorId
+    this.myPeerId = myPeerId
   }
 
   async generateAndSetGroupKey(): Promise<void> {
     this.groupKey = await generateGroupKey()
+    await this.initializeChains()
+  }
+
+  private async exportGroupKeyBytes(): Promise<Uint8Array> {
+    if (!this.groupKey) throw new Error('No group key')
+    const raw = await crypto.subtle.exportKey('raw', this.groupKey)
+    return new Uint8Array(raw)
+  }
+
+  private async initializeChains(): Promise<void> {
+    if (!this.groupKey || !this.myPeerId) return
+    const groupKeyBytes = await this.exportGroupKeyBytes()
+    this.myChainState = {
+      chainKey: await deriveChainKey(groupKeyBytes, this.myPeerId),
+      counter: 0,
+      skippedKeys: new Map()
+    }
+    this.peerChainStates.clear()
+    for (const [peerId] of this.peerPublicKeys) {
+      this.peerChainStates.set(peerId, {
+        chainKey: await deriveChainKey(groupKeyBytes, peerId),
+        counter: 0,
+        skippedKeys: new Map()
+      })
+    }
   }
 
   async addPeer(peerId: string, publicKeyBase64: string, pqPublicKeyBase64: string, sigBase64?: string): Promise<void> {
@@ -482,6 +551,14 @@ export class GroupKeyManager {
       this.colorPreferences.set(publicKeyBase64, await deriveColorPreferences(publicKeyBase64))
     }
     this.recomputeColors()
+    if (this.groupKey && this.myPeerId) {
+      const groupKeyBytes = await this.exportGroupKeyBytes()
+      this.peerChainStates.set(peerId, {
+        chainKey: await deriveChainKey(groupKeyBytes, peerId),
+        counter: 0,
+        skippedKeys: new Map()
+      })
+    }
   }
 
   removePeer(peerId: string): void {
@@ -490,6 +567,7 @@ export class GroupKeyManager {
     this.peerColors.delete(peerId)
     this.peerMlKemPublicKeys.delete(peerId)
     this.peerSigningKeys.delete(peerId)
+    this.peerChainStates.delete(peerId)
     if (pubKey) this.colorPreferences.delete(pubKey)
     this.recomputeColors()
   }
@@ -542,7 +620,7 @@ export class GroupKeyManager {
     }
   }
 
-  async receiveGroupKey(fromPeerId: string, encryptedGroupKey: string, pqCiphertext: string, sigBase64?: string): Promise<void> {
+  async receiveGroupKey(fromPeerId: string, encryptedGroupKey: string, pqCiphertext: string, sigBase64?: string, epoch?: number): Promise<void> {
     if (!this.signingKeyPair) throw new Error('Signing key pair not initialized')
     if (!this.mlKemKeyPair) throw new Error('ML-KEM key pair not initialized')
 
@@ -556,11 +634,16 @@ export class GroupKeyManager {
       }
     }
 
+    if (epoch !== undefined) {
+      this.epoch = epoch
+    }
+
     const ct = base64ToUint8Array(pqCiphertext)
     const mlkemSS = await mlKemDecapsulate(ct, this.mlKemKeyPair.secretKey)
     const kemKey = await deriveKemKey(mlkemSS)
     const groupKeyBase64 = await decrypt(kemKey, encryptedGroupKey)
     this.groupKey = await importGroupKey(groupKeyBase64)
+    await this.initializeChains()
   }
 
   signMlKemPublicKey(): string | null {
@@ -569,18 +652,93 @@ export class GroupKeyManager {
     return uint8ArrayToBase64(sig)
   }
 
-  async encryptMessage(message: string): Promise<string> {
-    if (!this.groupKey) throw new Error('Group key not set')
-    return encrypt(this.groupKey, message)
+  async encryptMessage(message: string): Promise<{payload: string, epoch: number, counter: number}> {
+    if (!this.myChainState) throw new Error('Chain not initialized')
+    const { messageKey, nextChainKey } = await ratchetChain(this.myChainState.chainKey)
+    const counter = this.myChainState.counter
+    this.myChainState.chainKey = nextChainKey
+    this.myChainState.counter++
+    const payload = await encrypt(messageKey, message)
+    return { payload, epoch: this.epoch, counter }
   }
 
-  async decryptMessage(encryptedMessage: string): Promise<string> {
-    if (!this.groupKey) throw new Error('Group key not set')
-    return decrypt(this.groupKey, encryptedMessage)
+  async decryptMessage(fromPeerId: string, encryptedMessage: string, epoch: number, counter: number): Promise<string> {
+    let chainStates: Map<string, ChainState>
+    if (epoch === this.epoch) {
+      chainStates = this.peerChainStates
+    } else if (epoch === this.epoch - 1 && this.previousEpochChains) {
+      chainStates = this.previousEpochChains
+    } else {
+      throw new Error('Unknown epoch')
+    }
+
+    const peerChain = chainStates.get(fromPeerId)
+    if (!peerChain) throw new Error('No chain for peer')
+
+    const skippedKey = peerChain.skippedKeys.get(counter)
+    if (skippedKey) {
+      peerChain.skippedKeys.delete(counter)
+      return decrypt(skippedKey, encryptedMessage)
+    }
+
+    if (counter < peerChain.counter) throw new Error('Message key already consumed')
+    if (counter - peerChain.counter > MAX_SKIP) throw new Error('Too many skipped messages')
+
+    while (peerChain.counter < counter) {
+      const { messageKey, nextChainKey } = await ratchetChain(peerChain.chainKey)
+      peerChain.skippedKeys.set(peerChain.counter, messageKey)
+      peerChain.chainKey = nextChainKey
+      peerChain.counter++
+    }
+
+    const { messageKey, nextChainKey } = await ratchetChain(peerChain.chainKey)
+    peerChain.chainKey = nextChainKey
+    peerChain.counter++
+    return decrypt(messageKey, encryptedMessage)
   }
 
   hasGroupKey(): boolean {
     return this.groupKey !== null
+  }
+
+  hasChain(): boolean {
+    return this.myChainState !== null
+  }
+
+  getEpoch(): number {
+    return this.epoch
+  }
+
+  shouldInitiateRekey(): boolean {
+    if (!this.myPeerId) return false
+    const allIds = [this.myPeerId, ...this.peerPublicKeys.keys()]
+    allIds.sort()
+    return allIds[0] === this.myPeerId
+  }
+
+  savePreviousEpochChains(): void {
+    if (this.previousEpochTimeout) {
+      clearTimeout(this.previousEpochTimeout)
+    }
+    this.previousEpochChains = new Map()
+    for (const [peerId, state] of this.peerChainStates) {
+      this.previousEpochChains.set(peerId, {
+        chainKey: new Uint8Array(state.chainKey),
+        counter: state.counter,
+        skippedKeys: new Map(state.skippedKeys)
+      })
+    }
+    this.previousEpochTimeout = setTimeout(() => {
+      this.previousEpochChains = null
+      this.previousEpochTimeout = null
+    }, 30000)
+  }
+
+  async initiateRekey(): Promise<void> {
+    this.savePreviousEpochChains()
+    this.epoch++
+    this.groupKey = await generateGroupKey()
+    await this.initializeChains()
   }
 
   getIsCreator(): boolean {
