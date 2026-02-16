@@ -1,5 +1,7 @@
 import { MlKem768 } from 'mlkem'
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js'
+import { TreeKemState, deriveRootGroupKey, type TreeKemCommit, type TreeKemWelcome } from './treekem'
+export type { TreeKemCommit, TreeKemWelcome } from './treekem'
 
 export interface SigningKeyPair {
   publicKey: Uint8Array
@@ -9,12 +11,6 @@ export interface SigningKeyPair {
 export interface MlKemKeyPair {
   publicKey: Uint8Array
   secretKey: Uint8Array
-}
-
-export interface KeySharePayload {
-  encrypted_group_key: string
-  pq_ciphertext: string
-  sig: string
 }
 
 export const PEER_COLORS = [
@@ -478,6 +474,8 @@ export class GroupKeyManager {
   private peerChainStates: Map<string, ChainState> = new Map()
   private previousEpochChains: Map<string, ChainState> | null = null
   private previousEpochTimeout: ReturnType<typeof setTimeout> | null = null
+  private treeState: TreeKemState | null = null
+  private peerLeafPositions: Map<string, number> = new Map()
 
   async initialize(password?: string): Promise<string> {
     const { keyPair, publicKey } = await getOrCreateKeyPair(password)
@@ -503,7 +501,9 @@ export class GroupKeyManager {
   }
 
   async generateAndSetGroupKey(): Promise<void> {
-    this.groupKey = await generateGroupKey()
+    if (!this.mlKemKeyPair) throw new Error('ML-KEM key pair not initialized')
+    this.treeState = TreeKemState.createForCreator(this.mlKemKeyPair.publicKey, this.mlKemKeyPair.secretKey)
+    this.groupKey = await deriveRootGroupKey(this.treeState.getRootSecret())
     await this.initializeChains()
   }
 
@@ -551,6 +551,10 @@ export class GroupKeyManager {
       this.colorPreferences.set(publicKeyBase64, await deriveColorPreferences(publicKeyBase64))
     }
     this.recomputeColors()
+    if (this.treeState) {
+      const leafPos = this.treeState.addLeaf(base64ToUint8Array(pqPublicKeyBase64))
+      this.peerLeafPositions.set(peerId, leafPos)
+    }
     if (this.groupKey && this.myPeerId) {
       const groupKeyBytes = await this.exportGroupKeyBytes()
       this.peerChainStates.set(peerId, {
@@ -569,6 +573,13 @@ export class GroupKeyManager {
     this.peerSigningKeys.delete(peerId)
     this.peerChainStates.delete(peerId)
     if (pubKey) this.colorPreferences.delete(pubKey)
+    if (this.treeState) {
+      const leafPos = this.peerLeafPositions.get(peerId)
+      if (leafPos !== undefined) {
+        this.treeState.removeLeaf(leafPos)
+        this.peerLeafPositions.delete(peerId)
+      }
+    }
     this.recomputeColors()
   }
 
@@ -599,50 +610,29 @@ export class GroupKeyManager {
     return this.peerColors.get(peerId) || 'blue'
   }
 
-  async encryptGroupKeyForPeer(peerId: string): Promise<KeySharePayload> {
-    if (!this.groupKey) throw new Error('Group key not set')
-    if (!this.signingKeyPair) throw new Error('Signing key pair not initialized')
+  async generateWelcomeForPeer(peerId: string): Promise<TreeKemWelcome> {
+    if (!this.treeState) throw new Error('Tree state not initialized')
+    const leafPos = this.peerLeafPositions.get(peerId)
+    if (leafPos === undefined) throw new Error(`No leaf position for peer ${peerId}`)
     const peerMlKemPub = this.peerMlKemPublicKeys.get(peerId)
     if (!peerMlKemPub) throw new Error(`No ML-KEM public key for peer ${peerId}`)
-    const exportedGroupKey = await exportGroupKey(this.groupKey)
-    const { ciphertext, sharedSecret } = await mlKemEncapsulate(peerMlKemPub)
-    const kemKey = await deriveKemKey(sharedSecret)
-    const encryptedGroupKey = await encrypt(kemKey, exportedGroupKey)
-    const pqCiphertext = uint8ArrayToBase64(ciphertext)
-
-    const dataToSign = new TextEncoder().encode(encryptedGroupKey + pqCiphertext)
-    const sig = sign(this.signingKeyPair.secretKey, dataToSign)
-
-    return {
-      encrypted_group_key: encryptedGroupKey,
-      pq_ciphertext: pqCiphertext,
-      sig: uint8ArrayToBase64(sig)
-    }
+    return this.treeState.generateWelcome(leafPos, peerMlKemPub, this.epoch)
   }
 
-  async receiveGroupKey(fromPeerId: string, encryptedGroupKey: string, pqCiphertext: string, sigBase64?: string, epoch?: number): Promise<void> {
-    if (!this.signingKeyPair) throw new Error('Signing key pair not initialized')
+  async receiveWelcome(welcome: TreeKemWelcome): Promise<void> {
     if (!this.mlKemKeyPair) throw new Error('ML-KEM key pair not initialized')
+    this.treeState = await TreeKemState.fromWelcome(welcome, this.mlKemKeyPair)
+    this.epoch = welcome.epoch
+    this.groupKey = await deriveRootGroupKey(this.treeState.getRootSecret())
+    await this.initializeChains()
+  }
 
-    if (sigBase64) {
-      const peerSigningKey = this.peerSigningKeys.get(fromPeerId)
-      if (!peerSigningKey) throw new Error('No signing key for peer')
-      const sigBytes = base64ToUint8Array(sigBase64)
-      const dataToVerify = new TextEncoder().encode(encryptedGroupKey + pqCiphertext)
-      if (!verify(peerSigningKey, dataToVerify, sigBytes)) {
-        throw new Error('Invalid signature on key share')
-      }
-    }
-
-    if (epoch !== undefined) {
-      this.epoch = epoch
-    }
-
-    const ct = base64ToUint8Array(pqCiphertext)
-    const mlkemSS = await mlKemDecapsulate(ct, this.mlKemKeyPair.secretKey)
-    const kemKey = await deriveKemKey(mlkemSS)
-    const groupKeyBase64 = await decrypt(kemKey, encryptedGroupKey)
-    this.groupKey = await importGroupKey(groupKeyBase64)
+  async receiveCommit(commit: TreeKemCommit): Promise<void> {
+    if (!this.treeState) throw new Error('Tree state not initialized')
+    this.savePreviousEpochChains()
+    this.epoch = commit.epoch
+    const rootSecret = await this.treeState.processCommit(commit)
+    this.groupKey = await deriveRootGroupKey(rootSecret)
     await this.initializeChains()
   }
 
@@ -697,6 +687,10 @@ export class GroupKeyManager {
     return decrypt(messageKey, encryptedMessage)
   }
 
+  hasTreeState(): boolean {
+    return this.treeState !== null
+  }
+
   hasGroupKey(): boolean {
     return this.groupKey !== null
   }
@@ -734,11 +728,15 @@ export class GroupKeyManager {
     }, 30000)
   }
 
-  async initiateRekey(): Promise<void> {
+  async initiateRekey(): Promise<TreeKemCommit> {
+    if (!this.treeState) throw new Error('Tree state not initialized')
     this.savePreviousEpochChains()
     this.epoch++
-    this.groupKey = await generateGroupKey()
+    const commit = await this.treeState.generateCommit()
+    commit.epoch = this.epoch
+    this.groupKey = await deriveRootGroupKey(this.treeState.getRootSecret())
     await this.initializeChains()
+    return commit
   }
 
   getIsCreator(): boolean {

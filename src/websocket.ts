@@ -1,6 +1,6 @@
 import { config } from './config'
 import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from './crypto'
-import type { PeerColor } from './crypto'
+import type { PeerColor, TreeKemCommit, TreeKemWelcome } from './crypto'
 import { checkPeerKey, storePeerKey } from './tofu'
 
 export type MessageHandler = (peerId: string, color: PeerColor, message: string, messageId?: string) => void
@@ -24,6 +24,8 @@ interface WsMessage {
   sig?: string
   epoch?: number
   counter?: number
+  tree_commit?: string
+  tree_welcome?: string
 }
 
 export class ChatConnection {
@@ -141,8 +143,9 @@ export class ChatConnection {
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
-          if (this.keyManager.hasGroupKey()) {
-            await this.sendGroupKeyToPeer(data.peer_id)
+          if (this.keyManager.hasTreeState()) {
+            await this.sendTreeCommit()
+            await this.sendTreeWelcome(data.peer_id)
           }
         }
         break
@@ -181,8 +184,9 @@ export class ChatConnection {
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
-          if (this.keyManager.hasGroupKey()) {
-            await this.sendGroupKeyToPeer(data.peer_id)
+          if (this.keyManager.hasTreeState()) {
+            await this.sendTreeCommit()
+            await this.sendTreeWelcome(data.peer_id)
           }
         }
         break
@@ -194,34 +198,33 @@ export class ChatConnection {
           this.keyManager.removePeer(data.peer_id)
           this.onPeerLeft(data.peer_id, color, publicKey)
           if (this.keyManager.shouldInitiateRekey() && this.keyManager.hasPeers()) {
-            await this.sendRekey()
+            await this.sendTreeCommit()
           }
         }
         break
 
-      case 'key_share':
-        if (data.peer_id && data.payload && data.pq_ciphertext) {
+      case 'tree_welcome':
+        if (data.tree_welcome) {
           try {
-            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext, data.sig, data.epoch)
+            const welcome: TreeKemWelcome = JSON.parse(data.tree_welcome)
+            await this.keyManager.receiveWelcome(welcome)
             this.onStatus('Ready to chat')
           } catch (e) {
-            console.error('Failed to receive group key:', e)
+            console.error('Failed to receive tree welcome:', e)
             this.onStatus('Failed to receive encryption key')
           }
-        } else if (data.peer_id && data.payload && !data.pq_ciphertext) {
-          this.onStatus('Rejected key share: no post-quantum ciphertext')
         }
         break
 
-      case 'rekey':
-        if (data.peer_id && data.payload && data.pq_ciphertext) {
+      case 'tree_commit':
+        if (data.tree_commit) {
           try {
-            this.keyManager.savePreviousEpochChains()
-            await this.keyManager.receiveGroupKey(data.peer_id, data.payload, data.pq_ciphertext, data.sig, data.epoch)
+            const commit: TreeKemCommit = JSON.parse(data.tree_commit)
+            await this.keyManager.receiveCommit(commit)
             this.messagesSinceRekey = 0
             this.onStatus('Encryption key rotated')
           } catch (e) {
-            console.error('Failed to process rekey:', e)
+            console.error('Failed to process tree commit:', e)
           }
         }
         break
@@ -261,39 +264,29 @@ export class ChatConnection {
     }
   }
 
-  private async sendGroupKeyToPeer(peerId: string): Promise<void> {
+  private async sendTreeWelcome(peerId: string): Promise<void> {
     try {
-      const { encrypted_group_key, pq_ciphertext, sig } = await this.keyManager.encryptGroupKeyForPeer(peerId)
+      const welcome = await this.keyManager.generateWelcomeForPeer(peerId)
       this.send({
-        type: 'key_share',
+        type: 'tree_welcome',
         target_peer_id: peerId,
-        payload: encrypted_group_key,
-        pq_ciphertext,
-        sig,
-        epoch: this.keyManager.getEpoch()
+        tree_welcome: JSON.stringify(welcome)
       })
     } catch (e) {
-      console.error('Failed to send group key to peer:', e)
+      console.error('Failed to send tree welcome:', e)
     }
   }
 
-  private async sendRekey(): Promise<void> {
+  private async sendTreeCommit(): Promise<void> {
     try {
-      await this.keyManager.initiateRekey()
-      for (const peerId of this.keyManager.getPeerIds()) {
-        const { encrypted_group_key, pq_ciphertext, sig } = await this.keyManager.encryptGroupKeyForPeer(peerId)
-        this.send({
-          type: 'rekey',
-          target_peer_id: peerId,
-          payload: encrypted_group_key,
-          pq_ciphertext,
-          sig,
-          epoch: this.keyManager.getEpoch()
-        })
-      }
+      const commit = await this.keyManager.initiateRekey()
+      this.send({
+        type: 'tree_commit',
+        tree_commit: JSON.stringify(commit)
+      })
       this.messagesSinceRekey = 0
     } catch (e) {
-      console.error('Failed to send rekey:', e)
+      console.error('Failed to send tree commit:', e)
     }
   }
 
@@ -309,7 +302,7 @@ export class ChatConnection {
     this.send({ type: 'message', payload, message_id: messageId, epoch, counter })
     this.messagesSinceRekey++
     if (this.messagesSinceRekey >= this.rekeyInterval && this.keyManager.shouldInitiateRekey() && this.keyManager.hasPeers()) {
-      await this.sendRekey()
+      await this.sendTreeCommit()
     }
   }
 
