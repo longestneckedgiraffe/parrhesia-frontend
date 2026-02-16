@@ -37,20 +37,20 @@ function initTheme(): void {
 }
 
 const PARRHESIA_ASCII = `
-                                                                                              
-                                                                                              
-                                         ,---,                                                
-,-.----.                               ,--.' |                            ,--,                
-\\    /  \\              __  ,-.  __  ,-.|  |  :                          ,--.'|                
-|   :    |           ,' ,'/ /|,' ,'/ /|:  :  :                .--.--.   |  |,                 
-|   | .\\ :  ,--.--.  '  | |' |'  | |' |:  |  |,--.   ,---.   /  /    '  \`--'_      ,--.--.    
-.   : |: | /       \\ |  |   ,'|  |   ,'|  :  '   |  /     \\ |  :  /\`./  ,' ,'|    /       \\   
-|   |  \\ :.--.  .-. |'  :  /  '  :  /  |  |   /' : /    /  ||  :  ;_    '  | |   .--.  .-. |  
-|   : .  | \\__\\/: . .|  | '   |  | '   '  :  | | |.    ' / | \\  \\    \`. |  | :    \\__\\/: . .  
-:     |\`-' ," .--.; |;  : |   ;  : |   |  |  ' | :'   ;   /|  \`----.   \\'  : |__  ," .--.; |  
-:   : :   /  /  ,.  ||  , ;   |  , ;   |  :  :_:,''   |  / | /  /\`--'  /|  | '.'|/  /  ,.  |  
-|   | :  ;  :   .'   \\---'     ---'    |  | ,'    |   :    |'--'.     / ;  :    ;  :   .'   \\ 
-\`---'.|  |  ,     .-./                 \`--''       \\   \\  /   \`--'---'  |  ,   /|  ,     .-./ 
+
+
+                                         ,---,
+,-.----.                               ,--.' |                            ,--,
+\\    /  \\              __  ,-.  __  ,-.|  |  :                          ,--.'|
+|   :    |           ,' ,'/ /|,' ,'/ /|:  :  :                .--.--.   |  |,
+|   | .\\ :  ,--.--.  '  | |' |'  | |' |:  |  |,--.   ,---.   /  /    '  \`--'_      ,--.--.
+.   : |: | /       \\ |  |   ,'|  |   ,'|  :  '   |  /     \\ |  :  /\`./  ,' ,'|    /       \\
+|   |  \\ :.--.  .-. |'  :  /  '  :  /  |  |   /' : /    /  ||  :  ;_    '  | |   .--.  .-. |
+|   : .  | \\__\\/: . .|  | '   |  | '   '  :  | | |.    ' / | \\  \\    \`. |  | :    \\__\\/: . .
+:     |\`-' ," .--.; |;  : |   ;  : |   |  |  ' | :'   ;   /|  \`----.   \\'  : |__  ," .--.; |
+:   : :   /  /  ,.  ||  , ;   |  , ;   |  :  :_:,''   |  / | /  /\`--'  /|  | '.'|/  /  ,.  |
+|   | :  ;  :   .'   \\---'     ---'    |  | ,'    |   :    |'--'.     / ;  :    ;  :   .'   \\
+\`---'.|  |  ,     .-./                 \`--''       \\   \\  /   \`--'---'  |  ,   /|  ,     .-./
   \`---\`   \`--\`---'                                  \`----'               ---\`-'  \`--\`---'`
 
 type View = 'landing' | 'chat'
@@ -305,7 +305,8 @@ function renderLanding(app: HTMLDivElement): void {
   app.innerHTML = `
     <div class="landing">
       <pre class="crow">${PARRHESIA_ASCII}</pre>
-      <p><i>end-to-end encrypted chat</i></p>
+      <p class="mobile-title"><i>parrhesia</i></p>
+      <p class="subtitle"><i>end-to-end encrypted chat</i></p>
       <hr>
       <div class="actions">
         <input type="text" id="room-input" placeholder="room id">
@@ -315,8 +316,11 @@ function renderLanding(app: HTMLDivElement): void {
       </div>
       ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
       <div class="footer-links">
-        <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend code</a>
-        <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend code</a>
+        <a id="source-toggle" class="source-toggle">source code</a>
+        <div class="source-links">
+          <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend</a>
+          <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend</a>
+        </div>
       </div>
       <div class="theme-toggle">
         <a id="theme-toggle">${theme}</a>
@@ -327,6 +331,9 @@ function renderLanding(app: HTMLDivElement): void {
   document.getElementById('join-room')?.addEventListener('click', handleJoinRoom)
   document.getElementById('room-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
+  })
+  document.getElementById('source-toggle')?.addEventListener('click', () => {
+    document.querySelector('.source-links')?.classList.toggle('visible')
   })
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     toggleTheme()

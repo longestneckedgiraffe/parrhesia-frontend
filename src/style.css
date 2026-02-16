@@ -45,7 +45,9 @@ hr {
 
 #app {
   max-width: 600px;
+  width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .landing {
@@ -58,6 +60,16 @@ hr {
   font-family: monospace;
   display: inline-block;
   text-align: left;
+}
+
+.mobile-title {
+  display: none;
+  margin: 0;
+}
+
+.subtitle {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .actions {
@@ -82,6 +94,19 @@ hr {
 .footer-links a {
   color: var(--text-muted);
   text-decoration: underline;
+}
+
+.source-toggle {
+  cursor: pointer;
+}
+
+.source-links {
+  display: none;
+  gap: 1em;
+}
+
+.source-links.visible {
+  display: flex;
 }
 
 .theme-toggle {
@@ -131,6 +156,7 @@ hr {
 
 .chat {
   height: 90vh;
+  height: 90dvh;
   display: flex;
   flex-direction: column;
 }
@@ -511,6 +537,99 @@ hr {
 .chat-header-left {
   flex: 1;
   min-width: 0;
+}
+
+@media (max-width: 480px) {
+  body {
+    margin: 0.5em;
+  }
+
+  .landing {
+    min-height: calc(100dvh - 1em);
+    min-height: calc(100vh - 1em);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .crow {
+    display: none;
+  }
+
+  .mobile-title {
+    display: block;
+    margin: 0;
+  }
+
+  .actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .actions .or {
+    display: none;
+  }
+
+  .actions input,
+  .actions button {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 16px;
+  }
+
+  .chat {
+    height: calc(100dvh - 1em);
+    height: calc(100vh - 1em);
+  }
+
+  .chat-input input,
+  .chat-input button {
+    font-size: 16px;
+  }
+
+  .message .peer {
+    width: 50px;
+    padding-right: 5px;
+  }
+
+  .message .text {
+    padding-left: 6px;
+  }
+
+  .footer-links {
+    bottom: 0.5em;
+  }
+
+  .theme-toggle {
+    display: none;
+  }
+
+  .verification-panel {
+    width: 95%;
+    padding: 1em;
+  }
+
+  .safety-number {
+    font-size: 1em;
+    letter-spacing: 0.05em;
+    padding: 0.75em;
+    word-break: break-all;
+  }
+
+  .verification-actions {
+    flex-direction: column;
+  }
+
+  .verification-actions .action-link,
+  .verification-actions .verified-text {
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .password-input {
+    font-size: 16px;
+  }
 }
 
 .sandbox {
