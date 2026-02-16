@@ -703,9 +703,10 @@ export class GroupKeyManager {
     return this.epoch
   }
 
-  shouldInitiateRekey(): boolean {
+  shouldInitiateRekey(excludePeerId?: string): boolean {
     if (!this.myPeerId) return false
-    const allIds = [this.myPeerId, ...this.peerPublicKeys.keys()]
+    let allIds = [this.myPeerId, ...this.peerPublicKeys.keys()]
+    if (excludePeerId) allIds = allIds.filter(id => id !== excludePeerId)
     allIds.sort()
     return allIds[0] === this.myPeerId
   }

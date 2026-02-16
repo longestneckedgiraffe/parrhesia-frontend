@@ -143,7 +143,7 @@ export class ChatConnection {
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
-          if (this.keyManager.hasTreeState() && this.keyManager.shouldInitiateRekey()) {
+          if (this.keyManager.hasTreeState() && this.keyManager.shouldInitiateRekey(data.peer_id)) {
             await this.sendTreeCommit()
             await this.sendTreeWelcome(data.peer_id)
           }
@@ -184,7 +184,7 @@ export class ChatConnection {
           const color = this.keyManager.getPeerColor(data.peer_id)
           this.onPeerJoined(data.peer_id, color, data.public_key)
 
-          if (this.keyManager.hasTreeState() && this.keyManager.shouldInitiateRekey()) {
+          if (this.keyManager.hasTreeState() && this.keyManager.shouldInitiateRekey(data.peer_id)) {
             await this.sendTreeCommit()
             await this.sendTreeWelcome(data.peer_id)
           }

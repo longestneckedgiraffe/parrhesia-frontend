@@ -10,7 +10,7 @@ Parrhesia is a very basic end-to-end encrypted chatting service.
 
 Parrhesia's key exchange uses ML-KEM-768, signatures use ML-DSA-65, and message encryption uses AES-256-GCM. Group key management utilizes efficient re-keying via TreeKEM. Despite these characteristics making Parrhesia post-quantum-safe, parrhesia.chat is still a use-at-your-own-risk service.
 
-ML-KEM-768 and ML-DSA-65 are documented [here](https://csrc.nist.gov/pubs/fips/204/final) and GCM/GMAC is documented [here](https://csrc.nist.gov/pubs/sp/800/38/d/final). TreeKEM key distribution is covered in [this](https://csrc.nist.gov/csrc/media/Events/2024/fifth-pqc-standardization-conference/documents/papers/how-multi-recipient-kems.pdf) paper.
+ML-KEM-768 and ML-DSA-65 are documented [here](https://csrc.nist.gov/pubs/fips/204/final) and GCM/GMAC is documented [here](https://csrc.nist.gov/pubs/sp/800/38/d/final). TreeKEM key distribution is covered in [this](https://eprint.iacr.org/2025/229.pdf) paper.
 
 ## Mermaid Diagram
 
