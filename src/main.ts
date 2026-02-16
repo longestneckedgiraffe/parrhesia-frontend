@@ -3,7 +3,7 @@ import { ChatConnection, createRoom, checkRoom } from './websocket'
 import type { PeerColor } from './crypto'
 import { isKeyPasswordProtected, hasStoredKeys, deriveMessageKey, encryptMessages, decryptMessages, isEncryptedData } from './crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './tofu'
-import { generateQRCode, initializeScanner, scanQRCode, stopScanner } from './qr'
+import { generateQRCode, initializeScanner, scanQRCode, stopScanner, fingerprintKey } from './qr'
 import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './tabSync'
 
 function getTheme(): 'light' | 'dark' | null {
@@ -545,19 +545,22 @@ async function startQRScan(): Promise<void> {
   }
 }
 
-function pollForQRCode(video: HTMLVideoElement): void {
+async function pollForQRCode(video: HTMLVideoElement): Promise<void> {
   if (!isScanning) return
 
   const result = scanQRCode(video)
   if (result && selectedPeerForVerification) {
     const peerPublicKey = connection?.getPeerPublicKey(selectedPeerForVerification)
-    if (peerPublicKey && result === peerPublicKey) {
-      markAsVerified(currentRoomId, selectedPeerForVerification, peerPublicKey)
-      addSystemMessage('Key verified successfully')
-      stopQRScan()
-    } else if (result) {
-      addSystemMessage('Scanned key does not match')
-      stopQRScan()
+    if (peerPublicKey) {
+      const match = await fingerprintKey(peerPublicKey).then(fp => fp === result)
+      if (match) {
+        markAsVerified(currentRoomId, selectedPeerForVerification, peerPublicKey)
+        addSystemMessage('Key verified successfully')
+        stopQRScan()
+      } else {
+        addSystemMessage('Scanned key does not match')
+        stopQRScan()
+      }
     } else {
       requestAnimationFrame(() => pollForQRCode(video))
     }

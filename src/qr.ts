@@ -3,8 +3,15 @@ import jsQR from 'jsqr'
 
 let scannerStream: MediaStream | null = null
 
+export async function fingerprintKey(publicKey: string): Promise<string> {
+  const data = new TextEncoder().encode(publicKey)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 export async function generateQRCode(publicKey: string): Promise<string> {
-  return QRCode.toDataURL(publicKey, {
+  const fingerprint = await fingerprintKey(publicKey)
+  return QRCode.toDataURL(fingerprint, {
     width: 200,
     margin: 2,
     errorCorrectionLevel: 'M'
@@ -45,6 +52,7 @@ export function stopScanner(videoElement: HTMLVideoElement): void {
   videoElement.srcObject = null
 }
 
-export function compareScannedKey(scannedKey: string, storedKey: string): boolean {
-  return scannedKey === storedKey
+export async function compareScannedKey(scannedFingerprint: string, publicKey: string): Promise<boolean> {
+  const fingerprint = await fingerprintKey(publicKey)
+  return scannedFingerprint === fingerprint
 }
