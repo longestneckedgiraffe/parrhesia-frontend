@@ -62,10 +62,19 @@ export function leftChild(index: number): number {
   return index - (1 << (level - 1))
 }
 
-export function rightChild(index: number): number {
+export function rightChild(index: number, numLeaves?: number): number {
   const level = nodeLevel(index)
   if (level === 0) throw new Error('Leaves have no children')
-  return index + (1 << (level - 1))
+  let r = index + (1 << (level - 1))
+  if (numLeaves !== undefined) {
+    const width = treeWidth(numLeaves)
+    while (r >= width) {
+      const rLevel = nodeLevel(r)
+      if (rLevel === 0) break
+      r = r - (1 << (rLevel - 1))
+    }
+  }
+  return r
 }
 
 export function parent(index: number, numLeaves: number): number {
@@ -106,7 +115,7 @@ function log2(x: number): number {
 export function sibling(index: number, numLeaves: number): number {
   const p = parent(index, numLeaves)
   const l = leftChild(p)
-  if (index === l) return rightChild(p)
+  if (index === l) return rightChild(p, numLeaves)
   return l
 }
 
@@ -311,7 +320,7 @@ export class TreeKemState {
       const level = nodeLevel(nodeIdx)
       if (level > 0) {
         const left = leftChild(nodeIdx)
-        const right = rightChild(nodeIdx)
+        const right = rightChild(nodeIdx, this.numLeaves)
         const leftNode = this.resolveNode(left)
         if (leftNode) return leftNode
         return this.resolveNode(right)
@@ -334,66 +343,38 @@ export class TreeKemState {
       node.secret = null
     }
 
-    const myDp = directPath(this.myLeafPos, this.numLeaves)
-    const myCp = copath(this.myLeafPos, this.numLeaves)
     const committerDp = directPath(commit.committerLeafPos, this.numLeaves)
+    const committerCp = copath(commit.committerLeafPos, this.numLeaves)
 
     let decryptedSecret: Uint8Array | null = null
-    let startIdx = -1
+    let decryptedAtIdx = -1
 
-    for (let i = 0; i < myCp.length; i++) {
-      const myCopathNode = myCp[i]
-      const committerPathIdx = committerDp.indexOf(myCopathNode)
-      if (committerPathIdx !== -1) {
-        continue
-      }
-
-      const myPathNode = myDp[i]
-      const matchingEntry = commit.path.find(e => e.nodeIndex === myPathNode)
-      if (matchingEntry && matchingEntry.mlKemCiphertext) {
-        const myNode = this.findDecryptionNode(myCp[i])
-        if (myNode && myNode.secretKey) {
-          decryptedSecret = await decryptFromNode(
-            matchingEntry.mlKemCiphertext,
-            matchingEntry.encryptedSecret,
-            myNode.secretKey
-          )
-          startIdx = i
-          break
-        }
+    for (let i = 0; i < committerDp.length; i++) {
+      const entry = commit.path.find(e => e.nodeIndex === committerDp[i])
+      if (!entry || !entry.mlKemCiphertext) continue
+      const myKey = this.findDecryptionNode(committerCp[i])
+      if (myKey && myKey.secretKey) {
+        decryptedSecret = await decryptFromNode(
+          entry.mlKemCiphertext,
+          entry.encryptedSecret,
+          myKey.secretKey
+        )
+        decryptedAtIdx = i
+        break
       }
     }
 
-    if (!decryptedSecret || startIdx < 0) {
-      for (let i = 0; i < myDp.length; i++) {
-        const matchingEntry = commit.path.find(e => e.nodeIndex === myDp[i])
-        if (matchingEntry && matchingEntry.mlKemCiphertext) {
-          const myCopathNodeIdx = myCp[i]
-          const myNode = this.findDecryptionNode(myCopathNodeIdx)
-          if (myNode && myNode.secretKey) {
-            decryptedSecret = await decryptFromNode(
-              matchingEntry.mlKemCiphertext,
-              matchingEntry.encryptedSecret,
-              myNode.secretKey
-            )
-            startIdx = i
-            break
-          }
-        }
-      }
-    }
-
-    if (!decryptedSecret || startIdx < 0) {
+    if (!decryptedSecret || decryptedAtIdx < 0) {
       throw new Error('Could not decrypt any path node in commit')
     }
 
-    const pathNode = ensureNode(this.nodes, myDp[startIdx])
+    const pathNode = ensureNode(this.nodes, committerDp[decryptedAtIdx])
     pathNode.secret = decryptedSecret
 
     let currentSecret: Uint8Array = decryptedSecret
-    for (let i = startIdx + 1; i < myDp.length; i++) {
+    for (let i = decryptedAtIdx + 1; i < committerDp.length; i++) {
       currentSecret = await deriveNodeSecret(currentSecret)
-      const node = ensureNode(this.nodes, myDp[i])
+      const node = ensureNode(this.nodes, committerDp[i])
       node.secret = currentSecret
     }
 
@@ -409,7 +390,7 @@ export class TreeKemState {
     if (node && node.secretKey) return node
     if (!isLeaf(nodeIdx) && nodeLevel(nodeIdx) > 0) {
       const l = leftChild(nodeIdx)
-      const r = rightChild(nodeIdx)
+      const r = rightChild(nodeIdx, this.numLeaves)
       const leftResult = this.findDecryptionNode(l)
       if (leftResult) return leftResult
       return this.findDecryptionNode(r)
