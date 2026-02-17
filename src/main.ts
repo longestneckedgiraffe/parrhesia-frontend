@@ -63,8 +63,6 @@ interface Message {
   isSystem?: boolean
   isNotification?: boolean
   verified?: boolean
-  id?: string
-  status?: 'sent' | 'read'
 }
 
 let currentRoomId = ''
@@ -131,8 +129,6 @@ const TYPING_THROTTLE_MS = 2000
 const TYPING_TIMEOUT_MS = 3000
 let typingPeers: Map<string, { color: PeerColor; timeout: ReturnType<typeof setTimeout> }> = new Map()
 let lastTypingSent = 0
-let messageReads: Map<string, Set<string>> = new Map()
-let unreadMessageIds: string[] = []
 
 let showPasswordModal = false
 let passwordModalMode: 'setup' | 'unlock' = 'setup'
@@ -410,7 +406,7 @@ function renderTypingIndicator(): string {
     const isVerified = stored?.status === 'verified'
     const colorClass = isVerified ? `color-${p.color}` : 'color-unverified'
     const peerName = isVerified ? p.color : 'unverified'
-    return `<div class="message typing-indicator ${colorClass}"><span class="peer">${peerName}</span><span class="text"><i>is typing</i></span></div>`
+    return `<div class="message typing-indicator ${colorClass}"><span class="peer">${peerName}</span><span class="text">is typing</span></div>`
   }).join('')
 }
 
@@ -433,8 +429,7 @@ function renderChat(app: HTMLDivElement): void {
       const isVerified = m.isMine || (m.verified ?? false)
       const colorClass = isVerified ? `color-${m.color}` : 'color-unverified'
       const peerName = m.isMine ? myColor : (isVerified ? m.color : 'unverified')
-      const statusClass = m.isMine && m.id ? (m.status === 'read' ? ' read' : ' sent') : ''
-      return `<div class="message ${colorClass}${statusClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
+      return `<div class="message ${colorClass}"><span class="peer">${peerName}</span><span class="text">${m.text}</span></div>`
     })
     .join('')
 
@@ -611,32 +606,6 @@ function handleTyping(peerId: string, color: PeerColor): void {
   render()
 }
 
-function handleRead(messageIds: string[], peerId: string): void {
-  for (const id of messageIds) {
-    let readers = messageReads.get(id)
-    if (!readers) {
-      readers = new Set()
-      messageReads.set(id, readers)
-    }
-    readers.add(peerId)
-  }
-  recheckReadStatuses()
-  render()
-}
-
-function recheckReadStatuses(): void {
-  const peerCount = connection?.getPeerCount() || 0
-  if (peerCount === 0) return
-  for (const m of messages) {
-    if (m.isMine && m.id && m.status !== 'read') {
-      const readers = messageReads.get(m.id)
-      if (readers && readers.size >= peerCount) {
-        m.status = 'read'
-      }
-    }
-  }
-}
-
 function handleInputForTyping(): void {
   const now = Date.now()
   if (now - lastTypingSent >= TYPING_THROTTLE_MS && connection) {
@@ -716,19 +685,12 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
 
   const newConnection = new ChatConnection(
     roomId,
-    async (peerId, color, text, messageId) => {
+    async (peerId, color, text) => {
       const publicKey = connection?.getPeerPublicKey(peerId)
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
-      messages.push({ peerId, color, text, isMine: false, verified, id: messageId })
+      messages.push({ peerId, color, text, isMine: false, verified })
       await saveMessages()
-      if (messageId) {
-        if (document.hasFocus() && connection) {
-          connection.sendRead([messageId])
-        } else {
-          unreadMessageIds.push(messageId)
-        }
-      }
       render()
     },
     (peerId, color, publicKey) => {
@@ -746,10 +708,6 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
         clearTimeout(existing.timeout)
         typingPeers.delete(peerId)
       }
-      for (const readers of messageReads.values()) {
-        readers.delete(peerId)
-      }
-      recheckReadStatuses()
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
       addNotification(color, 'has left', verified)
@@ -762,8 +720,7 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
       addSystemMessage(newStatus)
     },
     handleKeyChange,
-    handleTyping,
-    handleRead
+    handleTyping
   )
 
   await newConnection.connect(password)
@@ -788,8 +745,7 @@ async function handleSendMessage(): Promise<void> {
   if (!text || !canSend) return
 
   lastTypingSent = 0
-  const messageId = crypto.randomUUID()
-  messages.push({ peerId: myPeerId, color: myColor, text, isMine: true, id: messageId, status: 'sent' })
+  messages.push({ peerId: myPeerId, color: myColor, text, isMine: true })
   await saveMessages()
   input.value = ''
   render()
@@ -798,7 +754,7 @@ async function handleSendMessage(): Promise<void> {
   newInput?.focus()
 
   if (connection) {
-    await connection.sendMessage(text, messageId)
+    await connection.sendMessage(text)
   }
 }
 
@@ -830,19 +786,6 @@ async function init(): Promise<void> {
       status = 'Room does not exist or has expired'
     }
   }
-
-  function flushUnreadReceipts(): void {
-    if (unreadMessageIds.length > 0 && connection) {
-      connection.sendRead(unreadMessageIds)
-      unreadMessageIds = []
-    }
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') flushUnreadReceipts()
-  })
-
-  window.addEventListener('focus', flushUnreadReceipts)
 
   render()
 }

@@ -277,14 +277,6 @@ hr {
   color: var(--text-faint);
 }
 
-.message.sent {
-  opacity: 0.5;
-}
-
-.message.read {
-  opacity: 1;
-}
-
 .chat-input {
   margin-top: 0.75em;
   padding-top: 0.75em;
