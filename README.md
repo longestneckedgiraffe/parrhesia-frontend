@@ -20,49 +20,31 @@ sequenceDiagram
     participant S as Server
     participant B as Bob (Joiner)
 
-    Note over A,B: Room Creation & Key Announcement
+    Note over A,B: Key Exchange
 
-    A->>S: Create Room
-    S-->>A: Room ID
-    A->>S: WebSocket Connect
-    S-->>A: welcome (peer_id, is_creator=true)
-    A->>S: key_announce (ML-DSA pub + ML-KEM pub + sig)
-    Note over A: Generate TreeKEM tree (single leaf)
-    Note over A: Derive group key from root secret
+    A->>S: Create Room + WebSocket Connect
+    S-->>A: Room ID + welcome
+    A->>S: key_announce (ML-KEM pub, ML-DSA pub)
 
     B->>S: WebSocket Connect
-    S-->>B: welcome (peer_id, is_creator=false)
-    B->>S: key_announce (ML-DSA pub + ML-KEM pub + sig)
-    S-->>B: peer_key (Alice's keys)
+    B->>S: key_announce (ML-KEM pub, ML-DSA pub)
     S-->>A: peer_joined (Bob's keys)
+    S-->>B: peer_key (Alice's keys)
 
-    Note over A,B: TreeKEM Key Distribution
+    Note over A,B: TreeKEM Group Key Setup
 
-    Note over A: Verify Bob's ML-DSA sig on ML-KEM pub
-    Note over A: Add Bob as leaf in tree
-    A->>S: tree_commit (broadcast: new path keys)
-    S-->>B: tree_commit
-    A->>S: tree_welcome (targeted: tree + encrypted path secrets)
-    S-->>B: tree_welcome
-    Note over B: Decrypt path secrets via ML-KEM
-    Note over B: Derive group key from root secret
+    A->>S: tree_commit + tree_welcome (encrypted path secrets)
+    S-->>B: tree_commit + tree_welcome
     Note over A,B: Both derive identical AES-256-GCM group key
 
-    Note over A,B: Per-message Chain Ratchet
+    Note over A,B: Encrypted Messaging
 
-    A->>S: message (AES-GCM ciphertext, epoch, counter)
+    A->>S: message (AES-GCM ciphertext)
     S-->>B: message
-    Note over B: Ratchet chain → derive message key → decrypt
-
-    B->>S: message (AES-GCM ciphertext, epoch, counter)
+    B->>S: message (AES-GCM ciphertext)
     S-->>A: message
-    Note over A: Ratchet chain → derive message key → decrypt
 
-    Note over A,B: Periodic Rekey (every 50 messages)
-
-    A->>S: tree_commit (fresh leaf secret, new path keys)
-    S-->>B: tree_commit
-    Note over A,B: New epoch, new group key, chains re-initialized
+    Note over A,B: Rekey every 50 messages via tree_commit
 ```
 
 ## License
