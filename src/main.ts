@@ -1,10 +1,10 @@
-import './style.css'
-import { ChatConnection, createRoom, checkRoom } from './websocket'
-import type { PeerColor } from './crypto'
-import { isKeyPasswordProtected, hasStoredKeys, deriveMessageKey, encryptMessages, decryptMessages, isEncryptedData } from './crypto'
-import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './tofu'
-import { generateQRCode, initializeScanner, scanQRCode, stopScanner, fingerprintKey } from './qr'
-import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './tabSync'
+import './styles/style.css'
+import { ChatConnection, createRoom, checkRoom } from './network/websocket'
+import type { PeerColor } from './crypto/crypto'
+import { isKeyPasswordProtected, hasStoredKeys, deriveMessageKey, encryptMessages, decryptMessages, isEncryptedData } from './crypto/crypto'
+import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './crypto/tofu'
+import { generateQRCode, initializeScanner, scanQRCode, stopScanner, fingerprintKey } from './utils/qr'
+import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './utils/tabSync'
 
 function getTheme(): 'light' | 'dark' | null {
   return localStorage.getItem('parrhesia-theme') as 'light' | 'dark' | null

@@ -1,7 +1,7 @@
 import { config } from './config'
-import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from './crypto'
-import type { PeerColor, TreeKemCommit, TreeKemWelcome } from './crypto'
-import { checkPeerKey, storePeerKey } from './tofu'
+import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from '../crypto/crypto'
+import type { PeerColor, TreeKemCommit, TreeKemWelcome } from '../crypto/crypto'
+import { checkPeerKey, storePeerKey } from '../crypto/tofu'
 
 export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
 export type PeerHandler = (peerId: string, color: PeerColor, publicKey?: string) => void
