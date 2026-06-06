@@ -312,19 +312,14 @@ export class TreeKemState {
   }
 
   private resolveNode(nodeIdx: number): TreeNode | null {
-    if (nodeIdx >= this.nodes.length) return null
-    const node = this.nodes[nodeIdx]
-    if (!node) return null
-    if (node.publicKey) return node
-    if (!isLeaf(nodeIdx)) {
-      const level = nodeLevel(nodeIdx)
-      if (level > 0) {
-        const left = leftChild(nodeIdx)
-        const right = rightChild(nodeIdx, this.numLeaves)
-        const leftNode = this.resolveNode(left)
-        if (leftNode) return leftNode
-        return this.resolveNode(right)
-      }
+    if (nodeIdx < this.nodes.length) {
+      const node = this.nodes[nodeIdx]
+      if (node && node.publicKey) return node
+    }
+    if (!isLeaf(nodeIdx) && nodeLevel(nodeIdx) > 0) {
+      const leftNode = this.resolveNode(leftChild(nodeIdx))
+      if (leftNode) return leftNode
+      return this.resolveNode(rightChild(nodeIdx, this.numLeaves))
     }
     return null
   }
