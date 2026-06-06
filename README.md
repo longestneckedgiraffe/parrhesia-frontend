@@ -1,5 +1,7 @@
 # parrhesia-frontend
 
+[![CI](https://github.com/longestneckedgiraffe/parrhesia-frontend/actions/workflows/ci.yml/badge.svg)](https://github.com/longestneckedgiraffe/parrhesia-frontend/actions/workflows/ci.yml)
+
 End-to-end encrypted chat with no accounts and post-quantum cryptography. Runs at [parrhesia.chat](https://parrhesia.chat/).
 
 This is the browser client. The relay server lives in [parrhesia-backend](https://github.com/longestneckedgiraffe/parrhesia-backend).
