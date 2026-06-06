@@ -20,11 +20,16 @@ export interface TreeNode {
   secret: Uint8Array | null
 }
 
+export interface TreeKemRecipient {
+  targetNodeIndex: number
+  mlKemCiphertext: string
+  encryptedSecret: string
+}
+
 export interface TreeKemPathEntry {
   nodeIndex: number
   newPublicKey: string
-  mlKemCiphertext: string
-  encryptedSecret: string
+  recipients: TreeKemRecipient[]
 }
 
 export interface TreeKemCommit {
@@ -284,23 +289,18 @@ export class TreeKemState {
       pathNode.publicKey = kp.publicKey
       pathNode.secretKey = kp.secretKey
 
-      const copathNode = this.resolveNode(copathNodeIdx)
-      if (copathNode && copathNode.publicKey) {
-        const { mlKemCiphertext, encryptedSecret } = await encryptToNode(currentSecret, copathNode.publicKey)
-        pathEntries.push({
-          nodeIndex: pathNodeIdx,
-          newPublicKey: uint8ArrayToBase64(kp.publicKey),
-          mlKemCiphertext,
-          encryptedSecret
-        })
-      } else {
-        pathEntries.push({
-          nodeIndex: pathNodeIdx,
-          newPublicKey: uint8ArrayToBase64(kp.publicKey),
-          mlKemCiphertext: '',
-          encryptedSecret: ''
-        })
+      const recipients: TreeKemRecipient[] = []
+      for (const leafIdx of this.resolveLeaves(copathNodeIdx)) {
+        const leafPub = this.nodes[leafIdx]?.publicKey
+        if (!leafPub) continue
+        const { mlKemCiphertext, encryptedSecret } = await encryptToNode(currentSecret, leafPub)
+        recipients.push({ targetNodeIndex: leafIdx, mlKemCiphertext, encryptedSecret })
       }
+      pathEntries.push({
+        nodeIndex: pathNodeIdx,
+        newPublicKey: uint8ArrayToBase64(kp.publicKey),
+        recipients
+      })
     }
 
     return {
@@ -311,17 +311,18 @@ export class TreeKemState {
     }
   }
 
-  private resolveNode(nodeIdx: number): TreeNode | null {
-    if (nodeIdx < this.nodes.length) {
-      const node = this.nodes[nodeIdx]
-      if (node && node.publicKey) return node
+  private resolveLeaves(nodeIdx: number): number[] {
+    if (isLeaf(nodeIdx)) {
+      const node = nodeIdx < this.nodes.length ? this.nodes[nodeIdx] : null
+      return node && node.publicKey ? [nodeIdx] : []
     }
-    if (!isLeaf(nodeIdx) && nodeLevel(nodeIdx) > 0) {
-      const leftNode = this.resolveNode(leftChild(nodeIdx))
-      if (leftNode) return leftNode
-      return this.resolveNode(rightChild(nodeIdx, this.numLeaves))
+    if (nodeLevel(nodeIdx) > 0) {
+      return [
+        ...this.resolveLeaves(leftChild(nodeIdx)),
+        ...this.resolveLeaves(rightChild(nodeIdx, this.numLeaves))
+      ]
     }
-    return null
+    return []
   }
 
   async processCommit(commit: TreeKemCommit): Promise<Uint8Array> {
@@ -339,24 +340,25 @@ export class TreeKemState {
     }
 
     const committerDp = directPath(commit.committerLeafPos, this.numLeaves)
-    const committerCp = copath(commit.committerLeafPos, this.numLeaves)
 
     let decryptedSecret: Uint8Array | null = null
     let decryptedAtIdx = -1
 
     for (let i = 0; i < committerDp.length; i++) {
       const entry = commit.path.find(e => e.nodeIndex === committerDp[i])
-      if (!entry || !entry.mlKemCiphertext) continue
-      const myKey = this.findDecryptionNode(committerCp[i])
-      if (myKey && myKey.secretKey) {
+      if (!entry) continue
+      for (const recipient of entry.recipients) {
+        const target = this.nodes[recipient.targetNodeIndex]
+        if (!target || !target.secretKey) continue
         decryptedSecret = await decryptFromNode(
-          entry.mlKemCiphertext,
-          entry.encryptedSecret,
-          myKey.secretKey
+          recipient.mlKemCiphertext,
+          recipient.encryptedSecret,
+          target.secretKey
         )
         decryptedAtIdx = i
         break
       }
+      if (decryptedAtIdx >= 0) break
     }
 
     if (!decryptedSecret || decryptedAtIdx < 0) {
@@ -377,20 +379,6 @@ export class TreeKemState {
     const rootNode = ensureNode(this.nodes, r)
     if (!rootNode.secret) throw new Error('Failed to derive root secret')
     return rootNode.secret
-  }
-
-  private findDecryptionNode(nodeIdx: number): TreeNode | null {
-    if (nodeIdx >= this.nodes.length) return null
-    const node = this.nodes[nodeIdx]
-    if (node && node.secretKey) return node
-    if (!isLeaf(nodeIdx) && nodeLevel(nodeIdx) > 0) {
-      const l = leftChild(nodeIdx)
-      const r = rightChild(nodeIdx, this.numLeaves)
-      const leftResult = this.findDecryptionNode(l)
-      if (leftResult) return leftResult
-      return this.findDecryptionNode(r)
-    }
-    return null
   }
 
   async generateWelcome(joinerLeafPos: number, peerMlKemPub: Uint8Array, epoch: number): Promise<TreeKemWelcome> {
@@ -416,8 +404,7 @@ export class TreeKemState {
         pathSecrets.push({
           nodeIndex: nodeIdx,
           newPublicKey: node.publicKey ? uint8ArrayToBase64(node.publicKey) : '',
-          mlKemCiphertext,
-          encryptedSecret
+          recipients: [{ targetNodeIndex: 2 * joinerLeafPos, mlKemCiphertext, encryptedSecret }]
         })
         break
       }
@@ -452,9 +439,10 @@ export class TreeKemState {
 
     if (welcome.pathSecrets.length > 0) {
       const entry = welcome.pathSecrets[0]
+      const recipient = entry.recipients[0]
       const decryptedSecret = await decryptFromNode(
-        entry.mlKemCiphertext,
-        entry.encryptedSecret,
+        recipient.mlKemCiphertext,
+        recipient.encryptedSecret,
         myMlKemKeyPair.secretKey
       )
 
