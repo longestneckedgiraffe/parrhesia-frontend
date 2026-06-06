@@ -60,8 +60,8 @@ export class ChatConnection {
     this.onTyping = onTyping
   }
 
-  async connect(password?: string): Promise<void> {
-    const publicKey = await this.keyManager.initialize(password)
+  async connect(): Promise<void> {
+    const publicKey = await this.keyManager.initialize()
     const wsUrl = config.endpoints.websocket(this.roomId)
     this.ws = new WebSocket(wsUrl)
 
@@ -326,6 +326,10 @@ export class ChatConnection {
 
   getMyPublicKey(): string {
     return this.keyManager.getMyPublicKey()
+  }
+
+  async getMessageStorageKey(): Promise<CryptoKey> {
+    return this.keyManager.getMessageStorageKey()
   }
 
   getPeerPublicKey(peerId: string): string | undefined {

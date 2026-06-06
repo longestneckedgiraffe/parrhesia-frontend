@@ -1,7 +1,7 @@
 import './styles/style.css'
 import { ChatConnection, createRoom, checkRoom } from './network/websocket'
 import type { PeerColor } from './crypto/crypto'
-import { isKeyPasswordProtected, hasStoredKeys, deriveMessageKey, encryptMessages, decryptMessages, isEncryptedData } from './crypto/crypto'
+import { encryptMessages, decryptMessages, isEncryptedData, clearLegacyStorage } from './crypto/crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './crypto/tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner, fingerprintKey } from './utils/qr'
 import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './utils/tabSync'
@@ -73,13 +73,9 @@ function getStorageKey(roomId: string): string {
 }
 
 async function saveMessages(): Promise<void> {
-  if (!currentRoomId) return
-  if (messageEncryptionKey) {
-    const encrypted = await encryptMessages(messages, messageEncryptionKey)
-    localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(encrypted))
-  } else {
-    localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(messages))
-  }
+  if (!currentRoomId || !messageEncryptionKey) return
+  const encrypted = await encryptMessages(messages, messageEncryptionKey)
+  localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(encrypted))
 }
 
 async function loadMessages(roomId: string): Promise<Message[]> {
@@ -87,11 +83,9 @@ async function loadMessages(roomId: string): Promise<Message[]> {
   if (!stored) return []
   try {
     const parsed = JSON.parse(stored)
-    if (isEncryptedData(parsed) && messageEncryptionKey) {
+    if (isEncryptedData(parsed)) {
+      if (!messageEncryptionKey) return []
       return await decryptMessages(parsed, messageEncryptionKey) as Message[]
-    }
-    if (isEncryptedData(parsed) && !messageEncryptionKey) {
-      return []
     }
     return parsed
   } catch {
@@ -130,148 +124,6 @@ const TYPING_TIMEOUT_MS = 3000
 let typingPeers: Map<string, { color: PeerColor; timeout: ReturnType<typeof setTimeout> }> = new Map()
 let lastTypingSent = 0
 
-let showPasswordModal = false
-let passwordModalMode: 'setup' | 'unlock' = 'setup'
-let passwordError = ''
-let pendingRoomId: string | null = null
-let showSkipConfirm = false
-
-function renderPasswordModal(): string {
-  if (!showPasswordModal) return ''
-
-  if (showSkipConfirm) {
-    return `
-      <div class="verification-overlay" id="password-overlay">
-        <div class="verification-panel">
-          <div class="verification-header">
-            <span id="skip-confirm-back" class="close-link">Back</span>
-          </div>
-          <div class="verification-info">Without a password, your private key and all message history (yours and your peers') are stored in plaintext on this device. Anyone with access to this browser can read them.</div>
-          <div class="verification-actions">
-            <span id="skip-confirm-proceed" class="action-link">Continue Without Password</span>
-          </div>
-        </div>
-      </div>
-    `
-  }
-
-  const isSetup = passwordModalMode === 'setup'
-  const description = isSetup
-    ? 'Add a password to encrypt your private keys and messages (highly recommended). This is a one-time choice; skipping requires clearing browser data to enable later.'
-    : 'Enter your password to unlock your encrypted keys.'
-
-  return `
-    <div class="verification-overlay" id="password-overlay">
-      <div class="verification-panel">
-        <div class="verification-header">
-          <span id="close-password-modal" class="close-link">${isSetup ? 'Skip' : 'Cancel'}</span>
-        </div>
-        <div class="verification-info">${description}</div>
-        <input type="password" id="password-input" class="password-input" placeholder="Enter password" autofocus>
-        ${isSetup ? '<input type="password" id="password-confirm" class="password-input" placeholder="Confirm password">' : ''}
-        ${passwordError ? `<div class="password-error">${passwordError}</div>` : ''}
-        <div class="verification-actions">
-          <span id="password-submit" class="action-link">${isSetup ? 'Set Password' : 'Unlock'}</span>
-        </div>
-      </div>
-    </div>
-  `
-}
-
-function setupPasswordModalListeners(): void {
-  document.getElementById('close-password-modal')?.addEventListener('click', handlePasswordModalClose)
-  document.getElementById('password-submit')?.addEventListener('click', handlePasswordSubmit)
-  document.getElementById('password-input')?.addEventListener('keypress', (e) => {
-    if ((e as KeyboardEvent).key === 'Enter') {
-      if (passwordModalMode === 'setup') {
-        document.getElementById('password-confirm')?.focus()
-      } else {
-        handlePasswordSubmit()
-      }
-    }
-  })
-  document.getElementById('password-confirm')?.addEventListener('keypress', (e) => {
-    if ((e as KeyboardEvent).key === 'Enter') handlePasswordSubmit()
-  })
-  document.getElementById('skip-confirm-back')?.addEventListener('click', () => {
-    showSkipConfirm = false
-    render()
-  })
-  document.getElementById('skip-confirm-proceed')?.addEventListener('click', handleSkipConfirmed)
-}
-
-async function handlePasswordModalClose(): Promise<void> {
-  if (passwordModalMode === 'setup' && pendingRoomId) {
-    showSkipConfirm = true
-    render()
-  } else {
-    showPasswordModal = false
-    passwordError = ''
-    pendingRoomId = null
-    render()
-  }
-}
-
-async function handleSkipConfirmed(): Promise<void> {
-  showPasswordModal = false
-  showSkipConfirm = false
-  passwordError = ''
-  if (pendingRoomId) {
-    await joinRoom(pendingRoomId, undefined)
-    pendingRoomId = null
-  }
-}
-
-async function handlePasswordSubmit(): Promise<void> {
-  const passwordInput = document.getElementById('password-input') as HTMLInputElement
-  const password = passwordInput.value
-
-  if (!password) {
-    passwordError = 'Password is required'
-    render()
-    return
-  }
-
-  if (passwordModalMode === 'setup') {
-    const confirmInput = document.getElementById('password-confirm') as HTMLInputElement
-    const confirm = confirmInput.value
-
-    if (password !== confirm) {
-      passwordError = 'Passwords do not match'
-      render()
-      return
-    }
-
-    if (password.length < 8) {
-      passwordError = 'Password must be at least 8 characters'
-      render()
-      return
-    }
-  }
-
-  showPasswordModal = false
-  passwordError = ''
-
-  messageEncryptionKey = await deriveMessageKey(password)
-
-  if (pendingRoomId) {
-    try {
-      await joinRoom(pendingRoomId, password)
-    } catch (e) {
-      if (passwordModalMode === 'unlock') {
-        messageEncryptionKey = null
-        passwordError = 'Invalid password'
-        showPasswordModal = true
-        render()
-        return
-      }
-      status = 'Failed to join room'
-      render()
-    }
-    pendingRoomId = null
-  }
-}
-
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
   const existingInput = document.getElementById('message-input') as HTMLInputElement | null
@@ -286,12 +138,6 @@ function render(): void {
       if (savedValue) newInput.value = savedValue
       newInput.focus()
     }
-  }
-
-  const passwordModal = renderPasswordModal()
-  if (passwordModal) {
-    app.insertAdjacentHTML('beforeend', passwordModal)
-    setupPasswordModalListeners()
   }
 }
 
@@ -617,20 +463,7 @@ function handleInputForTyping(): void {
 async function handleCreateRoom(): Promise<void> {
   try {
     const roomId = await createRoom()
-
-    if (isKeyPasswordProtected()) {
-      pendingRoomId = roomId
-      passwordModalMode = 'unlock'
-      showPasswordModal = true
-      render()
-    } else if (!hasStoredKeys()) {
-      pendingRoomId = roomId
-      passwordModalMode = 'setup'
-      showPasswordModal = true
-      render()
-    } else {
-      await joinRoom(roomId, undefined)
-    }
+    await joinRoom(roomId)
   } catch {
     status = 'Unable to create room'
     render()
@@ -658,22 +491,10 @@ async function handleJoinRoom(): Promise<void> {
     return
   }
 
-  if (isKeyPasswordProtected()) {
-    pendingRoomId = roomId
-    passwordModalMode = 'unlock'
-    showPasswordModal = true
-    render()
-  } else if (!hasStoredKeys()) {
-    pendingRoomId = roomId
-    passwordModalMode = 'setup'
-    showPasswordModal = true
-    render()
-  } else {
-    await joinRoom(roomId, undefined)
-  }
+  await joinRoom(roomId)
 }
 
-async function joinRoom(roomId: string, password?: string): Promise<void> {
+async function joinRoom(roomId: string): Promise<void> {
   if (isRoomOccupied(roomId)) {
     status = 'Already connected to this room in another tab'
     currentView = 'landing'
@@ -723,11 +544,12 @@ async function joinRoom(roomId: string, password?: string): Promise<void> {
     handleTyping
   )
 
-  await newConnection.connect(password)
+  await newConnection.connect()
 
   connection = newConnection
   currentRoomId = roomId
   onRoomJoined(roomId)
+  messageEncryptionKey = await newConnection.getMessageStorageKey()
   messages = await loadMessages(roomId)
   myPeerId = connection.getPeerId()
   myColor = connection.getMyColor()
@@ -761,6 +583,7 @@ async function handleSendMessage(): Promise<void> {
 async function init(): Promise<void> {
   initTheme()
   initTabSync()
+  clearLegacyStorage()
   const url = new URL(window.location.href)
 
   const roomId = url.searchParams.get('room')
@@ -770,14 +593,6 @@ async function init(): Promise<void> {
     if (exists) {
       if (isRoomOccupied(roomId)) {
         status = 'Already connected to this room in another tab'
-      } else if (isKeyPasswordProtected()) {
-        pendingRoomId = roomId
-        passwordModalMode = 'unlock'
-        showPasswordModal = true
-      } else if (!hasStoredKeys()) {
-        pendingRoomId = roomId
-        passwordModalMode = 'setup'
-        showPasswordModal = true
       } else {
         await joinRoom(roomId)
         return

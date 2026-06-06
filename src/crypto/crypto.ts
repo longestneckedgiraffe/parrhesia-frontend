@@ -1,6 +1,7 @@
 import { MlKem768 } from 'mlkem'
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js'
 import { TreeKemState, deriveRootGroupKey, type TreeKemCommit, type TreeKemWelcome } from './treekem'
+import { getOrCreateDeviceKey } from './deviceKey'
 export type { TreeKemCommit, TreeKemWelcome } from './treekem'
 
 export interface SigningKeyPair {
@@ -28,13 +29,12 @@ const AES_PARAMS = {
 const KEM_INFO = new TextEncoder().encode('parrhesia-kem-v2')
 const KEM_SALT = new Uint8Array(32)
 
-const PBKDF2_ITERATIONS = 600000
 const CHAIN_SALT = new Uint8Array(32)
+const MESSAGE_STORAGE_INFO = new TextEncoder().encode('parrhesia-message-storage-v1')
 const MAX_SKIP = 100
 
-const STORAGE_KEY = 'parrhesia-keypair'
-const WRAPPED_STORAGE_KEY = 'parrhesia-keypair-wrapped'
-const MESSAGE_SALT_KEY = 'parrhesia-message-salt'
+const DEVICE_BOUND_STORAGE_KEY = 'parrhesia-keypair-v3'
+const LEGACY_STORAGE_KEYS = ['parrhesia-keypair', 'parrhesia-keypair-wrapped', 'parrhesia-message-salt']
 
 interface ChainState {
   chainKey: Uint8Array
@@ -42,9 +42,8 @@ interface ChainState {
   skippedKeys: Map<number, CryptoKey>
 }
 
-interface WrappedKeyData {
+interface DeviceBoundKeyData {
   encryptedKey: string
-  salt: string
   iv: string
   publicKey: string
 }
@@ -117,93 +116,48 @@ async function ratchetChain(chainKey: Uint8Array): Promise<{messageKey: CryptoKe
   return { messageKey, nextChainKey: new Uint8Array(nextBits) }
 }
 
-function isLegacyStoredFormat(data: unknown): boolean {
-  if (typeof data !== 'object' || data === null) return false
-  const obj = data as Record<string, unknown>
-  return typeof obj.privateKey === 'object' && obj.privateKey !== null && 'kty' in (obj.privateKey as Record<string, unknown>)
-}
-
-function isLegacyWrappedFormat(data: WrappedKeyData): boolean {
-  try {
-    const decoded = atob(data.publicKey)
-    return decoded.length === 65
-  } catch {
-    return true
+export function clearLegacyStorage(): void {
+  for (const key of LEGACY_STORAGE_KEYS) {
+    localStorage.removeItem(key)
   }
 }
 
-async function deriveWrappingKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-  const passwordKey = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
-    false,
-    ['deriveKey']
-  )
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-    passwordKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  )
-}
-
-export async function saveKeyPairWithPassword(signingKeyPair: SigningKeyPair, publicKeyBase64: string, password: string): Promise<void> {
-  const salt = crypto.getRandomValues(new Uint8Array(16))
+async function saveKeyPairDeviceBound(signingKeyPair: SigningKeyPair, publicKeyBase64: string, deviceKey: CryptoKey): Promise<void> {
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const wrappingKey = await deriveWrappingKey(password, salt)
-
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
-    wrappingKey,
+    deviceKey,
     signingKeyPair.secretKey as BufferSource
   )
 
-  const data: WrappedKeyData = {
-    encryptedKey: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
-    salt: btoa(String.fromCharCode(...salt)),
-    iv: btoa(String.fromCharCode(...iv)),
+  const data: DeviceBoundKeyData = {
+    encryptedKey: uint8ArrayToBase64(new Uint8Array(encrypted)),
+    iv: uint8ArrayToBase64(iv),
     publicKey: publicKeyBase64
   }
 
-  localStorage.removeItem(STORAGE_KEY)
-  localStorage.setItem(WRAPPED_STORAGE_KEY, JSON.stringify(data))
+  localStorage.setItem(DEVICE_BOUND_STORAGE_KEY, JSON.stringify(data))
 }
 
-export async function loadKeyPairWithPassword(password: string): Promise<{ keyPair: SigningKeyPair; publicKey: string } | null> {
-  const stored = localStorage.getItem(WRAPPED_STORAGE_KEY)
+async function loadKeyPairDeviceBound(deviceKey: CryptoKey): Promise<{ keyPair: SigningKeyPair; publicKey: string } | null> {
+  const stored = localStorage.getItem(DEVICE_BOUND_STORAGE_KEY)
   if (!stored) return null
 
   try {
-    const data: WrappedKeyData = JSON.parse(stored)
-
-    if (isLegacyWrappedFormat(data)) {
-      localStorage.removeItem(WRAPPED_STORAGE_KEY)
-      return null
-    }
-
-    const encryptedBytes = Uint8Array.from(atob(data.encryptedKey), c => c.charCodeAt(0))
-    const salt = Uint8Array.from(atob(data.salt), c => c.charCodeAt(0))
-    const iv = Uint8Array.from(atob(data.iv), c => c.charCodeAt(0))
-
-    const wrappingKey = await deriveWrappingKey(password, salt)
+    const data: DeviceBoundKeyData = JSON.parse(stored)
+    const encryptedBytes = base64ToUint8Array(data.encryptedKey)
+    const iv = base64ToUint8Array(data.iv)
 
     const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      wrappingKey,
-      encryptedBytes
+      { name: 'AES-GCM', iv: iv as BufferSource },
+      deviceKey,
+      encryptedBytes as BufferSource
     )
 
     const secretKey = new Uint8Array(decrypted)
-    if (secretKey.length !== 4032) {
-      localStorage.removeItem(WRAPPED_STORAGE_KEY)
-      return null
-    }
-
     const publicKey = base64ToUint8Array(data.publicKey)
-    if (publicKey.length !== 1952) {
-      localStorage.removeItem(WRAPPED_STORAGE_KEY)
+    if (secretKey.length !== 4032 || publicKey.length !== 1952) {
+      localStorage.removeItem(DEVICE_BOUND_STORAGE_KEY)
       return null
     }
 
@@ -212,42 +166,17 @@ export async function loadKeyPairWithPassword(password: string): Promise<{ keyPa
       publicKey: data.publicKey
     }
   } catch {
+    localStorage.removeItem(DEVICE_BOUND_STORAGE_KEY)
     return null
   }
 }
 
-export function isKeyPasswordProtected(): boolean {
-  return localStorage.getItem(WRAPPED_STORAGE_KEY) !== null
-}
-
-export function hasStoredKeys(): boolean {
-  return localStorage.getItem(STORAGE_KEY) !== null || localStorage.getItem(WRAPPED_STORAGE_KEY) !== null
-}
-
-export async function deriveMessageKey(password: string): Promise<CryptoKey> {
-  let saltBase64 = localStorage.getItem(MESSAGE_SALT_KEY)
-  let salt: Uint8Array
-
-  if (!saltBase64) {
-    salt = crypto.getRandomValues(new Uint8Array(16))
-    saltBase64 = btoa(String.fromCharCode(...salt))
-    localStorage.setItem(MESSAGE_SALT_KEY, saltBase64)
-  } else {
-    salt = Uint8Array.from(atob(saltBase64), c => c.charCodeAt(0))
-  }
-
-  const passwordKey = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password + '-messages'),
-    'PBKDF2',
-    false,
-    ['deriveKey']
-  )
-
+export async function deriveMessageStorageKey(identitySecretKey: Uint8Array): Promise<CryptoKey> {
+  const keyMaterial = await crypto.subtle.importKey('raw', identitySecretKey as BufferSource, 'HKDF', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-    passwordKey,
-    { name: 'AES-GCM', length: 256 },
+    { name: 'HKDF', salt: CHAIN_SALT as BufferSource, info: MESSAGE_STORAGE_INFO as BufferSource, hash: 'SHA-256' },
+    keyMaterial,
+    AES_PARAMS,
     false,
     ['encrypt', 'decrypt']
   )
@@ -395,62 +324,15 @@ export function isValidMlKemPublicKey(b64: string): boolean {
   }
 }
 
-function saveKeyPairToStorage(signingKeyPair: SigningKeyPair, publicKeyBase64: string): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    secretKey: uint8ArrayToBase64(signingKeyPair.secretKey),
-    publicKey: publicKeyBase64
-  }))
-}
+export async function getOrCreateKeyPair(): Promise<{ keyPair: SigningKeyPair; publicKey: string }> {
+  const deviceKey = await getOrCreateDeviceKey()
 
-function loadKeyPairFromStorage(): { keyPair: SigningKeyPair; publicKey: string } | null {
-  const stored = localStorage.getItem(STORAGE_KEY)
-  if (!stored) return null
-
-  try {
-    const data = JSON.parse(stored)
-
-    if (isLegacyStoredFormat(data)) {
-      localStorage.removeItem(STORAGE_KEY)
-      return null
-    }
-
-    const secretKey = base64ToUint8Array(data.secretKey)
-    const publicKey = base64ToUint8Array(data.publicKey)
-
-    if (secretKey.length !== 4032 || publicKey.length !== 1952) {
-      localStorage.removeItem(STORAGE_KEY)
-      return null
-    }
-
-    return {
-      keyPair: { publicKey, secretKey },
-      publicKey: data.publicKey
-    }
-  } catch {
-    localStorage.removeItem(STORAGE_KEY)
-    return null
-  }
-}
-
-export async function getOrCreateKeyPair(password?: string): Promise<{ keyPair: SigningKeyPair; publicKey: string }> {
-  if (isKeyPasswordProtected()) {
-    if (!password) throw new Error('Password required')
-    const stored = await loadKeyPairWithPassword(password)
-    if (!stored) throw new Error('Invalid password')
-    return stored
-  }
-
-  const stored = loadKeyPairFromStorage()
+  const stored = await loadKeyPairDeviceBound(deviceKey)
   if (stored) return stored
 
   const keyPair = generateSigningKeyPair()
   const publicKey = uint8ArrayToBase64(keyPair.publicKey)
-
-  if (password) {
-    await saveKeyPairWithPassword(keyPair, publicKey, password)
-  } else {
-    saveKeyPairToStorage(keyPair, publicKey)
-  }
+  await saveKeyPairDeviceBound(keyPair, publicKey, deviceKey)
 
   return { keyPair, publicKey }
 }
@@ -477,8 +359,8 @@ export class GroupKeyManager {
   private treeState: TreeKemState | null = null
   private peerLeafPositions: Map<string, number> = new Map()
 
-  async initialize(password?: string): Promise<string> {
-    const { keyPair, publicKey } = await getOrCreateKeyPair(password)
+  async initialize(): Promise<string> {
+    const { keyPair, publicKey } = await getOrCreateKeyPair()
     this.signingKeyPair = keyPair
     this.myPublicKey = publicKey
     const prefs = await deriveColorPreferences(publicKey)
@@ -488,6 +370,11 @@ export class GroupKeyManager {
     this.mlKemKeyPair = await generateMlKemKeyPair()
 
     return publicKey
+  }
+
+  async getMessageStorageKey(): Promise<CryptoKey> {
+    if (!this.signingKeyPair) throw new Error('Signing key pair not initialized')
+    return deriveMessageStorageKey(this.signingKeyPair.secretKey)
   }
 
   getMyColor(): PeerColor {
