@@ -64,4 +64,4 @@ sequenceDiagram
 
 ## License
 
-[MIT](https://opensource.org/license/mit).
+[MIT](https://opensource.org/license/mit)
