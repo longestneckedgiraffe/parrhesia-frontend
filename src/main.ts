@@ -5,6 +5,8 @@ import { encryptMessages, decryptMessages, isEncryptedData, clearLegacyStorage }
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './crypto/tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner, fingerprintKey } from './utils/qr'
 import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './utils/tabSync'
+import { renderMarkdown } from './utils/markdown'
+import termsMarkdown from './content/terms.md?raw'
 
 function getTheme(): 'light' | 'dark' | null {
   return localStorage.getItem('parrhesia-theme') as 'light' | 'dark' | null
@@ -53,7 +55,7 @@ const PARRHESIA_ASCII = `
 \`---'.|  |  ,     .-./                 \`--''       \\   \\  /   \`--'---'  |  ,   /|  ,     .-./
   \`---\`   \`--\`---'                                  \`----'               ---\`-'  \`--\`---'`
 
-type View = 'landing' | 'chat'
+type View = 'landing' | 'chat' | 'terms'
 
 interface Message {
   peerId: string
@@ -109,6 +111,7 @@ let connection: ChatConnection | null = null
 let messages: Message[] = []
 let canSend = false
 let status = ''
+let agreedToTerms = false
 let myPeerId = ''
 let myColor: PeerColor = 'blue'
 
@@ -131,6 +134,8 @@ function render(): void {
 
   if (currentView === 'landing') {
     renderLanding(app)
+  } else if (currentView === 'terms') {
+    renderTerms(app)
   } else {
     renderChat(app)
     const newInput = document.getElementById('message-input') as HTMLInputElement
@@ -143,22 +148,31 @@ function render(): void {
 
 function renderLanding(app: HTMLDivElement): void {
   const theme = getCurrentEffectiveTheme()
+  const roomButtonAttrs = agreedToTerms ? '' : 'class="disabled" aria-disabled="true"'
 
   app.innerHTML = `
     <div class="landing">
       <pre class="crow">${PARRHESIA_ASCII}</pre>
       <p class="mobile-title"><i>parrhesia</i></p>
-      <p class="subtitle"><i>end-to-end encrypted chat</i></p>
+      <p class="subtitle"><i>Loquere libere; nihil manet.</i></p>
       <hr>
       <div class="actions">
         <input type="text" id="room-input" placeholder="room id">
-        <button id="join-room">Join</button>
+        <button id="join-room" ${roomButtonAttrs}>Join</button>
         <span class="or">or</span>
-        <button id="create-room">Create Room</button>
+        <button id="create-room" ${roomButtonAttrs}>Create Room</button>
+      </div>
+      <div class="terms-agree">
+        <input type="checkbox" id="terms-checkbox"${agreedToTerms ? ' checked' : ''}>
+        <label for="terms-checkbox">I agree to the</label>
+        <a href="?terms">terms</a>
       </div>
       ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
       <div class="footer-links">
-        <a id="source-toggle" class="source-toggle">source code</a>
+        <div class="footer-row">
+          <a id="source-toggle" class="source-toggle">source code</a>
+          <a href="?terms" class="terms-link">terms</a>
+        </div>
         <div class="source-links">
           <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend</a>
           <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend</a>
@@ -174,9 +188,39 @@ function renderLanding(app: HTMLDivElement): void {
   document.getElementById('room-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
   })
+  document.getElementById('terms-checkbox')?.addEventListener('change', (e) => {
+    agreedToTerms = (e.target as HTMLInputElement).checked
+    document.querySelectorAll<HTMLButtonElement>('#join-room, #create-room').forEach(button => {
+      button.classList.toggle('disabled', !agreedToTerms)
+      if (agreedToTerms) {
+        button.removeAttribute('aria-disabled')
+      } else {
+        button.setAttribute('aria-disabled', 'true')
+      }
+    })
+  })
   document.getElementById('source-toggle')?.addEventListener('click', () => {
     document.querySelector('.source-links')?.classList.toggle('visible')
   })
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    toggleTheme()
+    render()
+  })
+}
+
+function renderTerms(app: HTMLDivElement): void {
+  document.body.classList.add('terms-page')
+  const theme = getCurrentEffectiveTheme()
+
+  app.innerHTML = `
+    <div class="terms">
+      <a href="/" class="back-link">back</a>
+      <div class="terms-content">${renderMarkdown(termsMarkdown)}</div>
+    </div>
+    <div class="theme-toggle">
+      <a id="theme-toggle">${theme}</a>
+    </div>
+  `
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     toggleTheme()
     render()
@@ -461,6 +505,7 @@ function handleInputForTyping(): void {
 }
 
 async function handleCreateRoom(): Promise<void> {
+  if (!agreedToTerms) return
   try {
     const roomId = await createRoom()
     await joinRoom(roomId)
@@ -471,6 +516,7 @@ async function handleCreateRoom(): Promise<void> {
 }
 
 async function handleJoinRoom(): Promise<void> {
+  if (!agreedToTerms) return
   const input = document.getElementById('room-input') as HTMLInputElement
   const roomId = input.value.trim()
   if (!roomId) {
@@ -585,6 +631,12 @@ async function init(): Promise<void> {
   initTabSync()
   clearLegacyStorage()
   const url = new URL(window.location.href)
+
+  if (url.searchParams.has('terms')) {
+    currentView = 'terms'
+    render()
+    return
+  }
 
   const roomId = url.searchParams.get('room')
 

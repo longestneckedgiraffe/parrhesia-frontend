@@ -2,17 +2,13 @@
 
 [![CI](https://github.com/longestneckedgiraffe/parrhesia-frontend/actions/workflows/ci.yml/badge.svg)](https://github.com/longestneckedgiraffe/parrhesia-frontend/actions/workflows/ci.yml)
 
-End-to-end encrypted chat with no accounts and post-quantum cryptography. Runs at [parrhesia.chat](https://parrhesia.chat/).
+End-to-end encrypted chat with no accounts. Runs at [parrhesia.chat](https://parrhesia.chat/).
 
 This is the browser client. The relay server lives in [parrhesia-backend](https://github.com/longestneckedgiraffe/parrhesia-backend).
 
 ## What's Parrhesia?
 
-Create a room, send someone the link, and talk. Your browser does the encryption, so the server only sees ciphertext. Rooms expire on their own and there is nothing to sign up for. To check who is on the other end, compare the safety number shown for a peer or scan their QR code.
-
-parrhesia.chat is free and always will be. I run it and pay for it myself, with no ads and no paid tier.
-
-More features are planned for parrhesia. To stay up to date, check out my blog.
+parrhesia.chat is a free, ad-free, end-to-end encrypted chat service with no sign-ups and auto-expiring rooms. You can easily verify peers using safety numbers or QR codes.
 
 ## Running it
 

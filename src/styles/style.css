@@ -96,6 +96,12 @@ hr {
   text-decoration: underline;
 }
 
+.footer-row {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+
 .source-toggle {
   cursor: pointer;
 }
@@ -121,6 +127,49 @@ hr {
   cursor: pointer;
 }
 
+.terms {
+  margin: 2em auto 4em;
+  line-height: 1.6;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1.5em;
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.terms-content h1 {
+  font-size: 1.6em;
+  margin-bottom: 0.5em;
+}
+
+.terms-content h2 {
+  font-size: 1.25em;
+  margin-top: 1.5em;
+}
+
+.terms-content h3 {
+  font-size: 1.1em;
+  margin-top: 1.25em;
+}
+
+.terms-content a {
+  color: var(--text-muted);
+}
+
+.terms-content code {
+  font-family: monospace;
+  background: var(--bg-muted);
+  padding: 0.1em 0.3em;
+}
+
+.terms-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5em 0;
+}
+
 .actions .or {
   color: var(--text-faint);
 }
@@ -140,18 +189,41 @@ hr {
   cursor: pointer;
 }
 
-.actions button:hover {
+.actions button:hover:not(.disabled) {
   background: var(--bg-hover);
   border-color: var(--border-hover);
 }
 
-.actions button:active {
+.actions button:active:not(.disabled) {
   background: var(--bg-active);
+}
+
+.actions button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .actions input {
   background: var(--bg);
   outline: none;
+}
+
+.terms-agree {
+  margin-top: 0.75em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+  color: var(--text-muted);
+}
+
+.terms-agree input,
+.terms-agree label {
+  cursor: pointer;
+}
+
+.terms-agree a {
+  color: var(--text-muted);
 }
 
 .chat {
@@ -539,6 +611,16 @@ hr {
     height: 100dvh;
   }
 
+  body.terms-page {
+    overflow: auto;
+    height: auto;
+  }
+
+  .terms {
+    padding: 1em;
+    box-sizing: border-box;
+  }
+
   .landing {
     min-height: 100vh;
     min-height: 100dvh;
@@ -553,9 +635,10 @@ hr {
     display: none;
   }
 
-  .mobile-title {
-    display: block;
-    margin: 0;
+  .mobile-title,
+  .subtitle,
+  .landing hr {
+    display: none;
   }
 
   .actions {
