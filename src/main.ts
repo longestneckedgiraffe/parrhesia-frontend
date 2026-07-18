@@ -8,7 +8,7 @@ import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './utils/t
 import { renderMarkdown } from './utils/markdown'
 import termsMarkdown from './content/terms.md?raw'
 
-const TERMS_VERSION = '2026-07-05'
+const TERMS_VERSION = '2026-07-17'
 const TERMS_AGREEMENT_STORAGE_KEY = 'parrhesia-terms-agreement'
 
 interface TermsAgreement {

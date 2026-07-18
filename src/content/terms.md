@@ -1,106 +1,80 @@
 # Terms of Service
 
-Last updated: July 5, 2026
+Last updated: July 17, 2026
 
-These Terms of Service ("Terms") are a binding agreement between you ("you," "your," or "User") and the operator of parrhesia.chat ("Parrhesia," "we," "us," or "our"). They govern your access to and use of parrhesia.chat and any related software, applications, and infrastructure (collectively, the "Service").
+These Terms of Service ("Terms") govern your use of parrhesia.chat and its related software and infrastructure (collectively, the "Service"). They are an agreement between you and Ridhwan Zaman, the individual operator of the Service ("Parrhesia," "we," "us," or "our").
 
-By accessing or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms. If you do not agree, you must not access or use the Service.
+By selecting "I agree" before creating or joining a room, you agree to these Terms. If you do not agree, do not create or join a room.
 
-## 1. Summary
+## 1. The Service
 
-Parrhesia is a free, ad-free, end-to-end encrypted chat service with no accounts and auto-expiring rooms. We cannot read your messages, we do not know who you are, and we retain almost nothing. Because of this design, you use the Service anonymously and entirely at your own risk. This Summary is for convenience only and is not a substitute for the full Terms below.
+Parrhesia is a free, ad-free, end-to-end encrypted chat service with no user accounts and automatically expiring rooms.
+
+- No email address, phone number, or other identity information is required to create or join a room.
+- Message content is encrypted and decrypted on participant devices. Under normal operation, we do not possess the keys required to decrypt message content.
+- Message history is not stored on our servers. Encrypted message history may remain locally on a participant's device.
+- Rooms are temporary and expire automatically after a period of inactivity.
+- Peer-verification tools, including safety numbers and QR codes, are available to help participants verify one another.
+
+The Service may evolve over time. Features may be added, changed, or removed.
 
 ## 2. Eligibility
 
-You must be at least 18 years old, or the age of majority in your jurisdiction if that age is greater, to use the Service. By using the Service you represent and warrant that you meet this requirement and that you have the legal capacity to enter into these Terms. The Service is not directed to children. Because we do not collect identifying information from anyone, we cannot and do not knowingly collect information from children.
+You must be at least 18 years old, or the age of majority where you live if that age is greater, and have the legal capacity to agree to these Terms. The Service is not directed to children.
 
-## 3. Description of the Service
+## 3. Privacy and Data Handling
 
-Parrhesia provides ephemeral, end-to-end encrypted messaging between participants in a room:
+Parrhesia does not require or request your identity. Limited operational information is processed as necessary to create rooms, route connections, prevent abuse, maintain availability, and comply with law. Depending on how you access the Service, this information may include room identifiers, timestamps, temporary connection identifiers, IP addresses, and other network metadata processed by our hosting and network providers.
 
-- No sign-up, account, email address, or phone number is required or requested.
-- Messages are encrypted on your device and are decrypted only on the devices of the participants in your room. We never possess the keys required to read your messages.
-- Rooms are temporary and expire automatically. Message history is not stored on our servers.
-- Any message content that persists after a session is stored, encrypted, on your own device and is under your control.
-- Peer verification tools such as safety numbers and QR codes are provided so that you, and not we, can confirm the identity of the parties you communicate with.
+Your browser stores some information locally, including your agreement to these Terms, theme preference, cryptographic keys, peer-verification records, active-room state, and encrypted message history. This information remains on your device unless you remove it through your browser or device settings.
 
-The security of your communications depends in part on you. You are responsible for verifying your peers, for the security of the device and browser that you use, and for any copies of messages that persist on your own device. We make no guarantee that any message will be delivered, that any room will remain available, or that locally stored history will be preserved; rooms and data may expire or be lost at any time. The Service may be changed, suspended, or discontinued at any time without notice.
+The absence of an account does not guarantee that your activity is anonymous or untraceable. Other participants, network providers, or information you disclose may identify you or allow activity to be correlated.
 
-## 4. The Nature of Anonymity, and Your Assumption of Risk
+We do not maintain server-side message history and cannot disclose message content or decryption keys that we do not possess. We may preserve or disclose limited information in our possession when required by applicable law.
 
-The Service is designed to make its users anonymous and untrackable. This is a deliberate feature, and it carries consequences that you must understand and accept:
+## 4. User Responsibilities and Acceptable Use
 
-- We cannot identify you, the people you communicate with, or anyone else who uses the Service.
-- We cannot see, read, moderate, filter, censor, recover, or verify the content of any communication.
-- We cannot referee disputes, adjudicate complaints, remove content, or take action against another user, because we have no ability to identify or reach anyone.
-- Other users are equally anonymous and untraceable. You may encounter conduct that is offensive, deceptive, harassing, fraudulent, harmful, or unlawful, and the person responsible may be impossible to identify or hold accountable.
+Parrhesia does not verify the identity of room participants and cannot review or moderate encrypted message content. Other participants may misrepresent themselves, retain copies of messages, or use the Service unlawfully. You are responsible for deciding whom to communicate with and should use the available peer-verification tools when identity matters.
 
-**You accept all risk arising from the anonymous nature of the Service.** To the fullest extent permitted by law, you knowingly and voluntarily waive, release, and forever discharge us, and our creator, operator, and contributors, from any and all claims, demands, damages, liabilities, and causes of action of every kind, whether known or unknown, arising out of or relating to:
+You may not use the Service to:
 
-- the conduct of any other user, including any harm, loss, injury, harassment, defamation, or fraud committed against you through or in connection with the Service;
-- your inability to identify, locate, or obtain relief from any other user; and
-- the anonymization, encryption, and non-retention that the Service provides by design.
+- violate applicable law or the rights of others;
+- harass, threaten, stalk, defraud, exploit, or harm another person;
+- transmit content that you are not legally permitted to transmit;
+- distribute malware or malicious code;
+- gain unauthorized access to the Service or another system; or
+- disrupt, overload, or interfere with the security or operation of the Service.
 
-You agree that your sole and exclusive remedy for any dissatisfaction with the Service is to stop using it.
+We may take reasonable infrastructure-level measures, such as expiring or blocking a room or restricting access, when necessary to protect the Service, prevent abuse, or comply with law. Because message content is encrypted, these measures generally cannot target content we cannot access.
 
-## 5. Acceptable Use
+## 5. Availability and Security
 
-Because we cannot see your activity, responsible use rests entirely with you. You agree that you will not use the Service to:
+The Service is offered free of charge and may be changed, suspended, or discontinued. We do not guarantee that a message will be delivered, that a room will remain available, or that locally stored information will be preserved.
 
-- violate any applicable law or regulation;
-- infringe the rights of others, including intellectual property, privacy, or publicity rights;
-- distribute malware, or attempt to disrupt, overload, probe, reverse engineer, or circumvent the security or integrity of the Service or its infrastructure;
-- harass, threaten, stalk, defraud, or harm others; or
-- transmit content that you are not lawfully permitted to transmit.
+The security of your communications also depends on your device, browser, network, and verification of other participants. End-to-end encryption reduces certain risks but does not guarantee perfect security or protect information after another participant receives it.
 
-We do not monitor and cannot see content, and we assume no responsibility for policing conduct. We nevertheless reserve the right, without obligation and without notice, to take any technical measure available to us, including expiring or blocking a room or restricting access to the Service, where we deem it necessary to protect the Service or to comply with law. Given the architecture, any such measure operates at the level of infrastructure and cannot target content that we are unable to see.
+You may stop using the Service at any time.
 
-## 6. No Warranties
+## 6. Disclaimer and Limitation of Liability
 
-TO THE FULLEST EXTENT PERMITTED BY LAW, THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT, AND ANY WARRANTY THAT THE SERVICE WILL BE UNINTERRUPTED, SECURE, OR ERROR-FREE OR THAT ANY DEFECT WILL BE CORRECTED. WE DO NOT WARRANT THAT THE ENCRYPTION OR ANY OTHER SECURITY MEASURE CANNOT BE DEFEATED. YOU USE THE SERVICE AT YOUR OWN RISK.
+To the extent permitted by law, the Service is provided "as is" and "as available," without warranties of any kind, including implied warranties of merchantability, fitness for a particular purpose, title, and non-infringement. We do not guarantee that the Service will be uninterrupted, error-free, or secure against every possible attack.
 
-## 7. Limitation of Liability
+To the extent permitted by law, Ridhwan Zaman and contributors to Parrhesia will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of data, profits, revenue, goodwill, or reputation, arising from the Service or these Terms.
 
-TO THE FULLEST EXTENT PERMITTED BY LAW, IN NO EVENT WILL WE, OR OUR CREATOR, OPERATOR, OR CONTRIBUTORS, BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF DATA, PROFITS, REVENUE, GOODWILL, OR REPUTATION, ARISING OUT OF OR RELATING TO THESE TERMS OR YOUR USE OF, OR INABILITY TO USE, THE SERVICE, WHETHER BASED IN CONTRACT, TORT, NEGLIGENCE, STRICT LIABILITY, OR ANY OTHER THEORY, AND WHETHER OR NOT WE HAVE BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+Our total aggregate liability for claims arising from the Service or these Terms will not exceed one hundred U.S. dollars (US$100). These exclusions and limitations do not apply where applicable law does not permit them.
 
-BECAUSE THE SERVICE IS PROVIDED FREE OF CHARGE, OUR TOTAL AGGREGATE LIABILITY TO YOU FOR ALL CLAIMS ARISING OUT OF OR RELATING TO THE SERVICE WILL NOT EXCEED ONE HUNDRED U.S. DOLLARS (US$100).
+## 7. Open-Source Software
 
-Some jurisdictions do not allow certain of these limitations, so some of the above may not apply to you. In that case, our liability is limited to the greatest extent permitted by law.
+The client and server source code are available under the licenses published in their respective repositories. Those licenses govern your use, modification, and distribution of the source code. These Terms govern use of the hosted Service and do not limit rights granted by an open-source license.
 
-## 8. Indemnification
+## 8. Changes to These Terms
 
-To the fullest extent permitted by law, you agree to indemnify, defend, and hold harmless the creator, operator, and contributors of Parrhesia from and against any claims, liabilities, damages, losses, and expenses, including reasonable legal fees, arising out of or related to your use of the Service, your communications, or your violation of these Terms, of any law, or of the rights of any third party.
+We may revise these Terms as the Service changes. When we do, we will update the date above and ask you to accept the revised Terms before creating or joining another room. Revised Terms apply after you accept them. If you do not agree to a revision, you may stop using the Service.
 
-## 9. Government and Law Enforcement Requests
+## 9. Governing Law and General Terms
 
-Parrhesia is built so that there is almost nothing to disclose. We do not hold encryption keys, we cannot decrypt messages, we do not maintain message history on our servers, we do not collect accounts or identifying information, and rooms expire automatically. In response to any demand, the most we could ever produce is the limited, non-content operational data that a server necessarily handles in order to route traffic, and even that is typically transient. There is no store of messages, identities, or keys to hand over, because none exists.
+These Terms are governed by the laws of the State of Georgia, United States, without regard to conflict-of-laws principles, except where mandatory law provides otherwise. Subject to applicable law, disputes relating to these Terms or the Service will be brought in a state or federal court with jurisdiction in Georgia.
 
-Nothing in this section is a promise to defeat valid legal process to which we are lawfully subject, and nothing here is legal advice to you. It is a description of how the Service is built and of the position that we take.
-
-## 10. Privacy
-
-We designed the Service to collect as little as is technically possible. We do not require accounts, we do not ask for your identity, and message content is never readable by us. Any operational data that is necessarily processed to run the Service is minimized and is not used to identify you. Because we hold no message content and no keys, we cannot produce, sell, or lose what we do not have.
-
-## 11. Intellectual Property and Open Source
-
-The Parrhesia client and server source code are made available under their respective open-source licenses as published in our repositories. These Terms govern your use of the hosted Service and do not limit any rights expressly granted to you under those licenses. The "Parrhesia" name and any associated marks are used to identify the Service; these Terms do not grant you the right to use them in a manner that suggests endorsement or affiliation.
-
-## 12. Termination
-
-You may stop using the Service at any time. We may suspend or terminate the Service, or your access to it, at any time and for any reason, without notice or liability. Provisions that by their nature should survive termination, including Sections 4, 6, 7, 8, and 13, will survive.
-
-## 13. Governing Law and Disputes
-
-These Terms are governed by the laws of the State of Georgia, United States, without regard to its conflict-of-laws rules, and, where applicable, by the federal law of the United States. Any dispute arising out of or relating to these Terms or the Service will be brought exclusively in the state or federal courts located in Georgia, and you consent to the personal jurisdiction of those courts. To the fullest extent permitted by law, you and we each waive any right to a jury trial and agree that any dispute will be conducted only on an individual basis and not as part of any class or representative action.
-
-## 14. Changes to These Terms
-
-We may revise these Terms from time to time. The "Last updated" date above indicates when the latest changes took effect. Your continued use of the Service after a change becomes effective constitutes your acceptance of the revised Terms. If you do not agree to the revised Terms, you must stop using the Service.
-
-## 15. Miscellaneous
-
-If any provision of these Terms is held unenforceable, that provision will be limited or severed to the minimum extent necessary, and the remaining provisions will remain in full force and effect. Our failure to enforce any right or provision is not a waiver of it. You may not assign these Terms; we may assign them freely. These Terms are the entire agreement between you and us regarding the Service and supersede any prior understanding.
-
-## 16. Contact
+If any provision of these Terms is found unenforceable, it will be limited or removed only to the extent necessary, and the remaining provisions will remain in effect. Our failure to enforce a provision is not a waiver of our right to do so later. These Terms are the entire agreement between you and us concerning the hosted Service.
 
 Questions about these Terms may be directed to [ridhwanzaman@tutamail.com](mailto:ridhwanzaman@tutamail.com).
