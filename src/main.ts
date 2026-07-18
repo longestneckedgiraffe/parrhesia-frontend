@@ -8,6 +8,14 @@ import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './utils/t
 import { renderMarkdown } from './utils/markdown'
 import termsMarkdown from './content/terms.md?raw'
 
+const TERMS_VERSION = '2026-07-05'
+const TERMS_AGREEMENT_STORAGE_KEY = 'parrhesia-terms-agreement'
+
+interface TermsAgreement {
+  version: string
+  agreedAt: string
+}
+
 function getTheme(): 'light' | 'dark' | null {
   return localStorage.getItem('parrhesia-theme') as 'light' | 'dark' | null
 }
@@ -111,9 +119,14 @@ let connection: ChatConnection | null = null
 let messages: Message[] = []
 let canSend = false
 let status = ''
-let agreedToTerms = false
 let myPeerId = ''
 let myColor: PeerColor = 'blue'
+let landingRoomId = ''
+
+let sessionTermsAgreement = false
+let showTermsAgreementModal = false
+let termsAgreementPromise: Promise<boolean> | null = null
+let termsAgreementResolver: ((agreed: boolean) => void) | null = null
 
 let showVerificationPanel = false
 let selectedPeerForVerification: string | null = null
@@ -130,7 +143,11 @@ let lastTypingSent = 0
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
   const existingInput = document.getElementById('message-input') as HTMLInputElement | null
+  const existingRoomInput = document.getElementById('room-input') as HTMLInputElement | null
   const savedValue = existingInput?.value || ''
+  if (existingRoomInput) landingRoomId = existingRoomInput.value
+
+  document.body.classList.toggle('terms-page', currentView === 'terms')
 
   if (currentView === 'landing') {
     renderLanding(app)
@@ -144,11 +161,15 @@ function render(): void {
       newInput.focus()
     }
   }
+
+  if (showTermsAgreementModal && currentView === 'landing') {
+    app.insertAdjacentHTML('beforeend', renderTermsAgreementModal())
+    bindTermsAgreementModal()
+  }
 }
 
 function renderLanding(app: HTMLDivElement): void {
   const theme = getCurrentEffectiveTheme()
-  const roomButtonAttrs = agreedToTerms ? '' : 'class="disabled" aria-disabled="true"'
 
   app.innerHTML = `
     <div class="landing">
@@ -158,14 +179,9 @@ function renderLanding(app: HTMLDivElement): void {
       <hr>
       <div class="actions">
         <input type="text" id="room-input" placeholder="room id">
-        <button id="join-room" ${roomButtonAttrs}>Join</button>
+        <button id="join-room">Join</button>
         <span class="or">or</span>
-        <button id="create-room" ${roomButtonAttrs}>Create Room</button>
-      </div>
-      <div class="terms-agree">
-        <input type="checkbox" id="terms-checkbox"${agreedToTerms ? ' checked' : ''}>
-        <label for="terms-checkbox">I agree to the</label>
-        <a href="?terms">terms</a>
+        <button id="create-room">Create Room</button>
       </div>
       ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
       <div class="footer-links">
@@ -183,21 +199,12 @@ function renderLanding(app: HTMLDivElement): void {
       </div>
     </div>
   `
+  const roomInput = document.getElementById('room-input') as HTMLInputElement
+  roomInput.value = landingRoomId
   document.getElementById('create-room')?.addEventListener('click', handleCreateRoom)
   document.getElementById('join-room')?.addEventListener('click', handleJoinRoom)
   document.getElementById('room-input')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
-  })
-  document.getElementById('terms-checkbox')?.addEventListener('change', (e) => {
-    agreedToTerms = (e.target as HTMLInputElement).checked
-    document.querySelectorAll<HTMLButtonElement>('#join-room, #create-room').forEach(button => {
-      button.classList.toggle('disabled', !agreedToTerms)
-      if (agreedToTerms) {
-        button.removeAttribute('aria-disabled')
-      } else {
-        button.setAttribute('aria-disabled', 'true')
-      }
-    })
   })
   document.getElementById('source-toggle')?.addEventListener('click', () => {
     document.querySelector('.source-links')?.classList.toggle('visible')
@@ -209,7 +216,6 @@ function renderLanding(app: HTMLDivElement): void {
 }
 
 function renderTerms(app: HTMLDivElement): void {
-  document.body.classList.add('terms-page')
   const theme = getCurrentEffectiveTheme()
 
   app.innerHTML = `
@@ -225,6 +231,85 @@ function renderTerms(app: HTMLDivElement): void {
     toggleTheme()
     render()
   })
+}
+
+function hasTermsAgreement(): boolean {
+  if (sessionTermsAgreement) return true
+
+  try {
+    const stored = localStorage.getItem(TERMS_AGREEMENT_STORAGE_KEY)
+    if (!stored) return false
+    const agreement = JSON.parse(stored) as TermsAgreement
+    return agreement.version === TERMS_VERSION
+  } catch {
+    return false
+  }
+}
+
+function persistTermsAgreement(): void {
+  sessionTermsAgreement = true
+  const agreement: TermsAgreement = {
+    version: TERMS_VERSION,
+    agreedAt: new Date().toISOString()
+  }
+
+  try {
+    localStorage.setItem(TERMS_AGREEMENT_STORAGE_KEY, JSON.stringify(agreement))
+  } catch {
+    return
+  }
+}
+
+function renderTermsAgreementModal(): string {
+  return `
+    <div class="modal-overlay" id="terms-agreement-overlay">
+      <div class="modal-panel verification-panel" id="terms-agreement-panel" role="dialog" aria-modal="true" aria-describedby="terms-agreement-description" tabindex="-1">
+        <div class="verification-header">
+          <button type="button" class="close-link" id="decline-terms">Not now</button>
+        </div>
+        <div class="verification-info" id="terms-agreement-description">To create or join a room, confirm that you meet the age requirement and agree to the <a href="?terms" target="_blank">terms of service</a>.</div>
+        <div class="verification-actions">
+          <button type="button" class="action-link" id="accept-terms">I agree</button>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function bindTermsAgreementModal(): void {
+  const panel = document.getElementById('terms-agreement-panel') as HTMLDivElement | null
+  panel?.focus()
+  panel?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') resolveTermsAgreement(false)
+  })
+  document.getElementById('accept-terms')?.addEventListener('click', () => resolveTermsAgreement(true))
+  document.getElementById('decline-terms')?.addEventListener('click', () => resolveTermsAgreement(false))
+  document.getElementById('terms-agreement-overlay')?.addEventListener('click', (event) => {
+    if ((event.target as HTMLElement).id === 'terms-agreement-overlay') resolveTermsAgreement(false)
+  })
+}
+
+function requestTermsAgreement(): Promise<boolean> {
+  if (hasTermsAgreement()) return Promise.resolve(true)
+  if (termsAgreementPromise) return termsAgreementPromise
+
+  showTermsAgreementModal = true
+  termsAgreementPromise = new Promise(resolve => {
+    termsAgreementResolver = resolve
+  })
+  render()
+  return termsAgreementPromise
+}
+
+function resolveTermsAgreement(agreed: boolean): void {
+  if (agreed) persistTermsAgreement()
+
+  showTermsAgreementModal = false
+  const resolve = termsAgreementResolver
+  termsAgreementResolver = null
+  termsAgreementPromise = null
+  render()
+  resolve?.(agreed)
 }
 
 function renderPeersList(): string {
@@ -263,8 +348,8 @@ function renderVerificationPanel(): string {
   const isVerified = stored?.status === 'verified'
 
   return `
-    <div class="verification-overlay" id="verification-overlay">
-      <div class="verification-panel">
+    <div class="modal-overlay" id="verification-overlay">
+      <div class="modal-panel verification-panel">
         <div class="verification-header">
           <span id="close-verification" class="close-link">Close</span>
         </div>
@@ -505,7 +590,7 @@ function handleInputForTyping(): void {
 }
 
 async function handleCreateRoom(): Promise<void> {
-  if (!agreedToTerms) return
+  if (!await requestTermsAgreement()) return
   try {
     const roomId = await createRoom()
     await joinRoom(roomId)
@@ -516,9 +601,9 @@ async function handleCreateRoom(): Promise<void> {
 }
 
 async function handleJoinRoom(): Promise<void> {
-  if (!agreedToTerms) return
   const input = document.getElementById('room-input') as HTMLInputElement
   const roomId = input.value.trim()
+  landingRoomId = roomId
   if (!roomId) {
     status = 'Please enter a room ID'
     render()
@@ -547,6 +632,8 @@ async function joinRoom(roomId: string): Promise<void> {
     render()
     return
   }
+
+  if (!await requestTermsAgreement()) return
 
   canSend = false
 
@@ -641,6 +728,7 @@ async function init(): Promise<void> {
   const roomId = url.searchParams.get('room')
 
   if (roomId) {
+    landingRoomId = roomId
     const exists = await checkRoom(roomId)
     if (exists) {
       if (isRoomOccupied(roomId)) {

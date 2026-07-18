@@ -189,41 +189,18 @@ hr {
   cursor: pointer;
 }
 
-.actions button:hover:not(.disabled) {
+.actions button:hover {
   background: var(--bg-hover);
   border-color: var(--border-hover);
 }
 
-.actions button:active:not(.disabled) {
+.actions button:active {
   background: var(--bg-active);
-}
-
-.actions button.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .actions input {
   background: var(--bg);
   outline: none;
-}
-
-.terms-agree {
-  margin-top: 0.75em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35em;
-  color: var(--text-muted);
-}
-
-.terms-agree input,
-.terms-agree label {
-  cursor: pointer;
-}
-
-.terms-agree a {
-  color: var(--text-muted);
 }
 
 .chat {
@@ -433,7 +410,7 @@ hr {
 .color-orange { color: #cc6600; }
 .color-gold { color: #b8860b; }
 
-.verification-overlay {
+.modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -446,12 +423,20 @@ hr {
   z-index: 1000;
 }
 
-.verification-panel {
+.modal-panel {
   background: var(--bg);
   border: 1px solid var(--border);
-  max-width: 360px;
   width: 90%;
   padding: 1.25em;
+  box-sizing: border-box;
+}
+
+.modal-panel:focus {
+  outline: none;
+}
+
+.verification-panel {
+  max-width: 360px;
 }
 
 .verification-header {
@@ -466,6 +451,8 @@ hr {
   background: var(--bg-subtle);
   color: var(--text);
   cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
 }
 
 .close-link:hover {
@@ -480,6 +467,10 @@ hr {
   margin-bottom: 1em;
   color: var(--text-muted);
   font-size: 0.9em;
+}
+
+.verification-info a {
+  color: inherit;
 }
 
 .password-input {
@@ -532,6 +523,8 @@ hr {
   background: var(--bg-subtle);
   color: var(--text);
   cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
 }
 
 .action-link:hover {
@@ -704,7 +697,7 @@ hr {
     display: none;
   }
 
-  .verification-panel {
+  .modal-panel {
     width: 95%;
     padding: 1em;
   }
