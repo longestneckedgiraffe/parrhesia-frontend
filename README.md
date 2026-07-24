@@ -10,6 +10,8 @@ This is the browser client. The relay server lives in [parrhesia-backend](https:
 
 parrhesia.chat is a free, ad-free, end-to-end encrypted chat service with no sign-ups and auto-expiring rooms. You can easily verify peers using safety numbers or QR codes.
 
+When designing Parrhesia, I wanted it to act as an ultra-lightweight and barebones way to streamline keypair based communication. Since that model has been achieved, Parrhesia in a maintenance-only mode until further notice with no plans to scale.
+
 ## Running it
 
 ```bash
@@ -22,9 +24,6 @@ You need the [backend](https://github.com/longestneckedgiraffe/parrhesia-backend
 ## Security
 
 Key exchange uses [ML-KEM-768](https://csrc.nist.gov/pubs/fips/203/final), signatures use [ML-DSA-65](https://csrc.nist.gov/pubs/fips/204/final), and messages use [AES-256-GCM](https://csrc.nist.gov/pubs/sp/800/38/d/final). Parrhesia manages the shared group key with a TreeKEM-style ratchet tree, so rekeying stays cheap when people join or leave, and every sender ratchets a fresh key per message on top of it. Each sender drops old keys as its chain advances, so cracking the current state will not open earlier messages. The server never holds a key.
-
-> [!WARNING]
-> parrhesia.chat is a use-at-your-own-risk service. Please do not rely on it to transmit sensitive or incriminating information.
 
 ## Protocol
 
