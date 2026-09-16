@@ -73,15 +73,23 @@ hr {
 }
 
 .actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: center;
   gap: 1em;
-  flex-wrap: wrap;
+}
+
+.actions #join-room {
+  justify-self: end;
+}
+
+.actions #create-room {
+  justify-self: start;
 }
 
 .room-fields {
   display: flex;
+  grid-column: 1 / -1;
   justify-content: center;
   width: 100%;
   gap: 1em;
@@ -95,9 +103,9 @@ hr {
 
 .footer-links {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: 1em;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -617,7 +625,8 @@ hr {
     height: 100dvh;
   }
 
-  body.terms-page {
+  body.terms-page,
+  body.landing-page {
     overflow: auto;
     height: auto;
   }
@@ -630,41 +639,59 @@ hr {
   .landing {
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 0.5em;
+    max-width: 388px;
+    margin: 0 auto;
+    padding: clamp(3rem, 14svh, 8rem) 24px max(1rem, env(safe-area-inset-bottom));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    justify-content: center;
   }
 
   .crow {
     display: none;
   }
 
-  .mobile-title,
-  .subtitle,
+  .mobile-title {
+    display: block;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 2rem;
+    line-height: 1.2;
+  }
+
+  .landing .subtitle {
+    margin-top: 0.75rem;
+  }
+
   .landing hr {
-    display: none;
+    margin: 1.5rem 0;
   }
 
   .actions {
-    flex-direction: column;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
     width: 100%;
+    gap: 1.25rem 0.75rem;
   }
 
   .room-fields {
     flex-direction: column;
+    gap: 0.75rem;
   }
 
-  .actions .or {
-    display: none;
-  }
-
-  .actions input,
-  .actions button {
+  .actions input {
     width: 100%;
     box-sizing: border-box;
     font-size: 16px;
+    padding: 0.75em 1em;
+    scroll-margin-block: 1.5rem;
+  }
+
+  .actions button {
+    min-height: 44px;
+    padding: 0.6em 0.75em;
+    font-size: 16px;
+    white-space: nowrap;
   }
 
   .chat {
@@ -706,12 +733,28 @@ hr {
     overflow-wrap: break-word;
   }
 
-  .footer-links {
-    bottom: 0.5em;
+  .landing .footer-links {
+    position: static;
+    margin-top: auto;
+    padding-top: 3rem;
+  }
+
+  .landing .footer-links a {
+    display: inline-block;
+    padding: 0.6rem 0;
+  }
+
+  .landing .footer-row {
+    gap: 1.25em;
   }
 
   .theme-toggle {
     display: none;
+  }
+
+  .landing .theme-toggle {
+    display: block;
+    position: static;
   }
 
   .modal-panel {

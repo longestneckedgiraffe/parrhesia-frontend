@@ -155,6 +155,7 @@ function render(): void {
   if (existingRoomInput) landingRoomId = existingRoomInput.value
 
   document.body.classList.toggle('terms-page', currentView === 'terms')
+  document.body.classList.toggle('landing-page', currentView === 'landing')
 
   if (currentView === 'landing') {
     renderLanding(app)
@@ -205,14 +206,14 @@ function renderLanding(app: HTMLDivElement): void {
         <div class="footer-row">
           <a id="source-toggle" class="source-toggle">source code</a>
           <a href="?terms" class="terms-link">terms</a>
+          <div class="theme-toggle">
+            <a id="theme-toggle">${theme}</a>
+          </div>
         </div>
         <div class="source-links">
           <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend</a>
           <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend</a>
         </div>
-      </div>
-      <div class="theme-toggle">
-        <a id="theme-toggle">${theme}</a>
       </div>
     </div>
   `
