@@ -76,14 +76,15 @@ hr {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5em;
+  gap: 1em;
   flex-wrap: wrap;
 }
 
 .room-fields {
   display: flex;
-  flex-direction: column;
-  gap: 0.5em;
+  justify-content: center;
+  width: 100%;
+  gap: 1em;
 }
 
 .actions button:disabled,
@@ -652,7 +653,7 @@ hr {
   }
 
   .room-fields {
-    width: 100%;
+    flex-direction: column;
   }
 
   .actions .or {
