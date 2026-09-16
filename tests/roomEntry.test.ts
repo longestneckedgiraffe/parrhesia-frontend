@@ -77,7 +77,7 @@ async function loadPage(path = '/', agreed = true): Promise<void> {
   vi.stubGlobal('window', dom.window)
   vi.stubGlobal('document', dom.window.document)
   vi.stubGlobal('localStorage', dom.window.localStorage)
-  if (agreed) localStorage.setItem('parrhesia-terms-agreement', JSON.stringify({ version: '2026-07-17' }))
+  if (agreed) localStorage.setItem('parrhesia-terms-agreement', JSON.stringify({ version: '2026-09-16' }))
   await import('../src/main')
 }
 
