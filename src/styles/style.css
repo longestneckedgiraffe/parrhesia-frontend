@@ -62,9 +62,8 @@ hr {
   text-align: left;
 }
 
-.mobile-title {
+.mobile-mark {
   display: none;
-  margin: 0;
 }
 
 .subtitle {
@@ -73,25 +72,16 @@ hr {
 }
 
 .actions {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 1em;
-}
-
-.actions #join-room {
-  justify-self: end;
-}
-
-.actions #create-room {
-  justify-self: start;
+  flex-wrap: wrap;
 }
 
 .room-fields {
   display: flex;
-  grid-column: 1 / -1;
-  justify-content: center;
-  width: 100%;
+  flex-direction: column;
   gap: 1em;
 }
 
@@ -641,7 +631,7 @@ hr {
     min-height: 100dvh;
     max-width: 388px;
     margin: 0 auto;
-    padding: clamp(3rem, 14svh, 8rem) 24px max(1rem, env(safe-area-inset-bottom));
+    padding: clamp(2.5rem, 10svh, 6rem) 24px max(1rem, env(safe-area-inset-bottom));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -651,15 +641,21 @@ hr {
     display: none;
   }
 
-  .mobile-title {
+  .mobile-mark {
     display: block;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 2rem;
-    line-height: 1.2;
+    width: 8rem;
+    height: 8rem;
+    margin: 0 auto;
+    mix-blend-mode: multiply;
+  }
+
+  :root[data-theme="dark"] .mobile-mark {
+    filter: invert(1);
+    mix-blend-mode: screen;
   }
 
   .landing .subtitle {
-    margin-top: 0.75rem;
+    display: none;
   }
 
   .landing hr {
@@ -667,15 +663,12 @@ hr {
   }
 
   .actions {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
     width: 100%;
     gap: 1.25rem 0.75rem;
   }
 
   .room-fields {
-    flex-direction: column;
+    width: 100%;
     gap: 0.75rem;
   }
 

@@ -189,7 +189,7 @@ function renderLanding(app: HTMLDivElement): void {
   app.innerHTML = `
     <div class="landing" ${showTermsAgreementModal || showPasswordModal ? 'inert' : ''}>
       <pre class="crow">${PARRHESIA_ASCII}</pre>
-      <p class="mobile-title"><i>parrhesia</i></p>
+      <img class="mobile-mark" src="/favicon/favicon.svg" alt="Parrhesia" width="128" height="128">
       <p class="subtitle"><i>Loquere libere; nihil manet.</i></p>
       <hr>
       <div class="actions">
