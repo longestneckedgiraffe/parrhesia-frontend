@@ -12,7 +12,7 @@ export async function fingerprintKey(publicKey: string): Promise<string> {
 export async function generateQRCode(publicKey: string): Promise<string> {
   const fingerprint = await fingerprintKey(publicKey)
   return QRCode.toDataURL(fingerprint, {
-    width: 200,
+    width: 600,
     margin: 2,
     errorCorrectionLevel: 'M'
   })
