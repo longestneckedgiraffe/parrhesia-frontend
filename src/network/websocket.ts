@@ -1,4 +1,5 @@
 import { config } from './config'
+import { RoomAccessError, retryMessage } from './rooms'
 import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from '../crypto/crypto'
 import type { PeerColor, TreeKemCommit, TreeKemWelcome } from '../crypto/crypto'
 import { checkPeerKey, storePeerKey } from '../crypto/tofu'
@@ -11,6 +12,8 @@ export type TypingHandler = (peerId: string, color: PeerColor) => void
 
 interface WsMessage {
   type: string
+  protocol_version?: number
+  retry_after_secs?: number
   peer_id?: string
   public_key?: string
   pq_public_key?: string
@@ -40,6 +43,13 @@ export class ChatConnection {
   private onTyping?: TypingHandler
   private messagesSinceRekey: number = 0
   private rekeyInterval: number = 50
+  private state: 'idle' | 'connecting' | 'authenticating' | 'joining' | 'joined' | 'closed' = 'idle'
+  private password = ''
+  private passwordRequired = false
+  private publicKey = ''
+  private joinResolver: (() => void) | null = null
+  private joinRejecter: ((error: RoomAccessError) => void) | null = null
+  private handshakeTimeout: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     roomId: string,
@@ -60,28 +70,114 @@ export class ChatConnection {
     this.onTyping = onTyping
   }
 
-  async connect(): Promise<void> {
-    const publicKey = await this.keyManager.initialize()
-    const wsUrl = config.endpoints.websocket(this.roomId)
-    this.ws = new WebSocket(wsUrl)
+  async prepare(): Promise<CryptoKey> {
+    this.publicKey = await this.keyManager.initialize()
+    return this.keyManager.getMessageStorageKey()
+  }
 
-    this.ws.onmessage = async (event) => {
-      const data: WsMessage = JSON.parse(event.data)
-      await this.handleMessage(data, publicKey)
+  async connect(passwordRequired = false, password = ''): Promise<void> {
+    if (this.state !== 'idle') throw new RoomAccessError('Connection already started')
+    this.state = 'connecting'
+    this.passwordRequired = passwordRequired || password.length > 0
+    this.password = password
+    password = ''
+    try {
+      if (!this.publicKey) await this.prepare()
+      if (this.isClosed()) throw new RoomAccessError('Connection cancelled')
+      this.ws = new WebSocket(config.endpoints.websocket(this.roomId))
+    } catch {
+      this.password = ''
+      this.state = 'closed'
+      throw new RoomAccessError('Unable to connect to room')
     }
 
+    const joined = new Promise<void>((resolve, reject) => {
+      this.joinResolver = resolve
+      this.joinRejecter = reject
+    })
+    this.handshakeTimeout = setTimeout(() => {
+      this.fail(new RoomAccessError('Connection timed out. Please try again.'))
+    }, 30000)
+
+    let messageQueue = Promise.resolve()
+    this.ws.onmessage = (event) => {
+      messageQueue = messageQueue.then(async () => {
+        if (this.isClosed()) return
+        const data: WsMessage = JSON.parse(event.data)
+        await this.handleMessage(data, this.publicKey)
+      }).catch(() => {
+        this.fail(new RoomAccessError('Invalid response from room server'))
+      })
+    }
     this.ws.onclose = () => {
-      this.onStatus('Disconnected from room')
+      this.fail(new RoomAccessError('Disconnected from room'))
     }
-
     this.ws.onerror = () => {
-      this.onStatus('Connection failed')
+      this.fail(new RoomAccessError('Connection failed. Please try again later.'))
     }
+    return joined
+  }
+
+  private clearHandshake(): void {
+    this.password = ''
+    if (this.handshakeTimeout) clearTimeout(this.handshakeTimeout)
+    this.handshakeTimeout = null
+    this.joinResolver = null
+    this.joinRejecter = null
+  }
+
+  private fail(error: RoomAccessError, reportStatus = true): void {
+    if (this.isClosed()) return
+    this.state = 'closed'
+    const reject = this.joinRejecter
+    this.clearHandshake()
+    this.ws?.close()
+    reject?.(error)
+    if (reportStatus) this.onStatus(error.message)
   }
 
   private async handleMessage(data: WsMessage, publicKey: string): Promise<void> {
+    if (!['auth_required', 'auth_failed', 'auth_rate_limited', 'auth_unavailable', 'welcome', 'joined', 'room_full', 'room_expired'].includes(data.type) && this.state !== 'joined') {
+      throw new Error('Unexpected room message before admission')
+    }
     switch (data.type) {
+      case 'auth_required':
+        if (this.state !== 'connecting' || data.protocol_version !== 2) {
+          this.fail(new RoomAccessError('The server did not confirm password protection. Room was not joined.'))
+          return
+        }
+        this.passwordRequired = true
+        if (!this.password) {
+          this.fail(new RoomAccessError('Please enter this room\'s password', 'password_required'))
+          return
+        }
+        this.state = 'authenticating'
+        this.send({ type: 'authenticate', password: this.password })
+        this.password = ''
+        break
+
+      case 'auth_failed':
+        this.fail(new RoomAccessError('Password was not accepted. Please try again.', 'auth_failed'))
+        break
+
+      case 'auth_rate_limited':
+        this.fail(new RoomAccessError(retryMessage(data.retry_after_secs), 'auth_rate_limited'))
+        break
+
+      case 'auth_unavailable':
+        this.fail(new RoomAccessError('Room access is temporarily unavailable. Please try again later.', 'auth_unavailable'))
+        break
+
       case 'welcome':
+        if (this.passwordRequired && (this.state !== 'authenticating' || data.protocol_version !== 2)) {
+          this.fail(new RoomAccessError('The server did not confirm password protection. Room was not joined.'))
+          return
+        }
+        if (!this.passwordRequired && (this.state !== 'connecting' || (data.protocol_version !== undefined && data.protocol_version !== 1))) {
+          throw new Error('Unexpected welcome')
+        }
+        this.password = ''
+        this.state = 'joining'
         this.peerId = data.peer_id || ''
         const isCreator = data.is_creator || false
         const creatorId = data.creator_id || ''
@@ -89,10 +185,9 @@ export class ChatConnection {
 
         if (isCreator) {
           await this.keyManager.generateAndSetGroupKey()
-          this.onStatus('Waiting for others to join')
-        } else {
-          this.onStatus('Waiting for encryption key')
         }
+        if (this.isClosed()) return
+        this.onStatus(isCreator ? 'Waiting for others to join' : 'Waiting for encryption key')
 
         const pqPublicKey = this.keyManager.getMlKemPublicKeyBase64()
         if (!pqPublicKey) throw new Error('ML-KEM key pair not initialized')
@@ -104,6 +199,15 @@ export class ChatConnection {
           sig: sig || undefined
         })
         break
+
+      case 'joined': {
+        if (this.state !== 'joining') throw new Error('Unexpected admission')
+        this.state = 'joined'
+        const resolve = this.joinResolver
+        this.clearHandshake()
+        resolve?.()
+        break
+      }
 
       case 'peer_key':
         if (data.peer_id && data.public_key) {
@@ -245,11 +349,11 @@ export class ChatConnection {
         break
 
       case 'room_expired':
-        this.onStatus('This room has expired')
+        this.fail(new RoomAccessError('This room has expired'))
         break
 
       case 'room_full':
-        this.onStatus('This room is full')
+        this.fail(new RoomAccessError('This room is full'))
         break
     }
   }
@@ -287,7 +391,7 @@ export class ChatConnection {
   }
 
   async sendMessage(text: string): Promise<void> {
-    if (!this.keyManager.hasChain()) return
+    if (!this.canSend()) return
     const { payload, epoch, counter } = await this.keyManager.encryptMessage(text)
     this.send({ type: 'message', payload, epoch, counter })
     this.messagesSinceRekey++
@@ -297,14 +401,17 @@ export class ChatConnection {
   }
 
   sendTyping(): void {
+    if (!this.canSend()) return
     this.send({ type: 'typing' })
   }
 
   disconnect(): void {
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
-    }
+    this.fail(new RoomAccessError('Connection cancelled'), false)
+    this.ws = null
+  }
+
+  isClosed(): boolean {
+    return this.state === 'closed'
   }
 
   getPeerId(): string {
@@ -316,7 +423,7 @@ export class ChatConnection {
   }
 
   canSend(): boolean {
-    return this.keyManager.hasChain() && this.keyManager.hasPeers()
+    return this.state === 'joined' && this.ws?.readyState === WebSocket.OPEN && this.keyManager.hasChain() && this.keyManager.hasPeers()
   }
 
   getMyColor(): PeerColor {
@@ -348,21 +455,4 @@ export class ChatConnection {
     return this.roomId
   }
 
-}
-
-export async function createRoom(): Promise<string> {
-  const response = await fetch(config.endpoints.createRoom, { method: 'POST' })
-  const data = await response.json()
-  return data.room_id
-}
-
-export async function checkRoom(roomId: string): Promise<boolean> {
-  try {
-    const response = await fetch(config.endpoints.checkRoom(roomId))
-    if (!response.ok) return false
-    const data = await response.json()
-    return data.exists === true
-  } catch {
-    return false
-  }
 }

@@ -1,5 +1,6 @@
 import './styles/style.css'
-import { ChatConnection, createRoom, checkRoom } from './network/websocket'
+import { ChatConnection } from './network/websocket'
+import { createRoom, checkRoom, RoomAccessError } from './network/rooms'
 import type { PeerColor } from './crypto/crypto'
 import { encryptMessages, decryptMessages, isEncryptedData, clearLegacyStorage } from './crypto/crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './crypto/tofu'
@@ -122,6 +123,10 @@ let status = ''
 let myPeerId = ''
 let myColor: PeerColor = 'blue'
 let landingRoomId = ''
+let roomActionPending = false
+let showPasswordModal = false
+let passwordError = ''
+let passwordResolver: ((password: string | null) => void) | null = null
 
 let sessionTermsAgreement = false
 let showTermsAgreementModal = false
@@ -144,6 +149,8 @@ function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
   const existingInput = document.getElementById('message-input') as HTMLInputElement | null
   const existingRoomInput = document.getElementById('room-input') as HTMLInputElement | null
+  const existingPasswordInput = document.getElementById('room-password') as HTMLInputElement | null
+  let savedPassword = existingPasswordInput?.value || ''
   const savedValue = existingInput?.value || ''
   if (existingRoomInput) landingRoomId = existingRoomInput.value
 
@@ -151,6 +158,8 @@ function render(): void {
 
   if (currentView === 'landing') {
     renderLanding(app)
+    const passwordInput = document.getElementById('room-password') as HTMLInputElement
+    passwordInput.value = savedPassword
   } else if (currentView === 'terms') {
     renderTerms(app)
   } else {
@@ -161,10 +170,15 @@ function render(): void {
       newInput.focus()
     }
   }
+  savedPassword = ''
 
   if (showTermsAgreementModal && currentView === 'landing') {
     app.insertAdjacentHTML('beforeend', renderTermsAgreementModal())
     bindTermsAgreementModal()
+  }
+  if (showPasswordModal && currentView === 'landing') {
+    app.insertAdjacentHTML('beforeend', renderPasswordModal())
+    bindPasswordModal()
   }
 }
 
@@ -172,18 +186,21 @@ function renderLanding(app: HTMLDivElement): void {
   const theme = getCurrentEffectiveTheme()
 
   app.innerHTML = `
-    <div class="landing">
+    <div class="landing" ${showTermsAgreementModal || showPasswordModal ? 'inert' : ''}>
       <pre class="crow">${PARRHESIA_ASCII}</pre>
       <p class="mobile-title"><i>parrhesia</i></p>
       <p class="subtitle"><i>Loquere libere; nihil manet.</i></p>
       <hr>
       <div class="actions">
-        <input type="text" id="room-input" placeholder="room id">
-        <button id="join-room">Join</button>
+        <div class="room-fields">
+          <input type="text" id="room-input" placeholder="room id" aria-label="Room ID" ${roomActionPending ? 'disabled' : ''}>
+          <input type="password" id="room-password" placeholder="password (optional)" aria-label="Room password (optional)" autocomplete="current-password" ${roomActionPending ? 'disabled' : ''}>
+        </div>
+        <button id="join-room" ${roomActionPending ? 'disabled' : ''}>Join</button>
         <span class="or">or</span>
-        <button id="create-room">Create Room</button>
+        <button id="create-room" ${roomActionPending ? 'disabled' : ''}>Create Room</button>
       </div>
-      ${status ? `<p><b>Status:</b> ${status}</p>` : ''}
+      ${status ? '<p role="status"><b>Status:</b> <span id="room-status"></span></p>' : ''}
       <div class="footer-links">
         <div class="footer-row">
           <a id="source-toggle" class="source-toggle">source code</a>
@@ -201,9 +218,14 @@ function renderLanding(app: HTMLDivElement): void {
   `
   const roomInput = document.getElementById('room-input') as HTMLInputElement
   roomInput.value = landingRoomId
+  const statusElement = document.getElementById('room-status')
+  if (statusElement) statusElement.textContent = status
   document.getElementById('create-room')?.addEventListener('click', handleCreateRoom)
   document.getElementById('join-room')?.addEventListener('click', handleJoinRoom)
   document.getElementById('room-input')?.addEventListener('keypress', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
+  })
+  document.getElementById('room-password')?.addEventListener('keypress', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
   })
   document.getElementById('source-toggle')?.addEventListener('click', () => {
@@ -310,6 +332,72 @@ function resolveTermsAgreement(agreed: boolean): void {
   termsAgreementPromise = null
   render()
   resolve?.(agreed)
+}
+
+function renderPasswordModal(): string {
+  return `
+    <div class="modal-overlay" id="password-overlay">
+      <form class="modal-panel verification-panel" id="password-panel" role="dialog" aria-modal="true" aria-label="Room password" aria-describedby="password-description">
+        <div class="verification-header">
+          <button type="button" class="close-link" id="cancel-password">Cancel</button>
+        </div>
+        <div class="verification-info" id="password-description">This room is password protected. Enter its password to join.</div>
+        <input type="password" class="password-input" id="join-password" placeholder="password" aria-label="Room password" autocomplete="current-password" required ${passwordError ? 'aria-describedby="password-error" aria-invalid="true"' : ''}>
+        ${passwordError ? '<div class="password-error" id="password-error" role="alert"></div>' : ''}
+        <div class="verification-actions">
+          <button type="submit" class="action-link" id="submit-password">Join</button>
+        </div>
+      </form>
+    </div>
+  `
+}
+
+function bindPasswordModal(): void {
+  const input = document.getElementById('join-password') as HTMLInputElement
+  const errorElement = document.getElementById('password-error')
+  if (errorElement) errorElement.textContent = passwordError
+  input.focus()
+  document.getElementById('password-panel')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    if (input.value) resolvePassword(input.value)
+  })
+  document.getElementById('password-panel')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') resolvePassword(null)
+    if (event.key !== 'Tab') return
+    const first = document.getElementById('cancel-password')!
+    const last = document.getElementById('submit-password')!
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  })
+  document.getElementById('cancel-password')?.addEventListener('click', () => resolvePassword(null))
+  document.getElementById('password-overlay')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) resolvePassword(null)
+  })
+}
+
+function requestPassword(error = ''): Promise<string | null> {
+  passwordError = error
+  showPasswordModal = true
+  return new Promise(resolve => {
+    passwordResolver = resolve
+    render()
+  })
+}
+
+function resolvePassword(password: string | null): void {
+  const input = document.getElementById('join-password') as HTMLInputElement | null
+  if (input) input.value = ''
+  showPasswordModal = false
+  passwordError = ''
+  const resolve = passwordResolver
+  passwordResolver = null
+  render()
+  resolve?.(password)
 }
 
 function renderPeersList(): string {
@@ -590,17 +678,31 @@ function handleInputForTyping(): void {
 }
 
 async function handleCreateRoom(): Promise<void> {
-  if (!await requestTermsAgreement()) return
+  if (roomActionPending) return
+  roomActionPending = true
+  let password = takeLandingPassword()
   try {
-    const roomId = await createRoom()
-    await joinRoom(roomId)
-  } catch {
-    status = 'Unable to create room'
+    if (!await requestTermsAgreement()) return
+    status = 'Creating room...'
+    render()
+    const room = await createRoom(password)
+    landingRoomId = room.roomId
+    const input = document.getElementById('room-input') as HTMLInputElement | null
+    if (input) input.value = room.roomId
+    const joining = joinRoom(room.roomId, room.passwordRequired, password)
+    password = ''
+    await joining
+  } catch (error) {
+    status = error instanceof RoomAccessError ? error.message : 'Unable to create room'
+  } finally {
+    password = ''
+    roomActionPending = false
     render()
   }
 }
 
 async function handleJoinRoom(): Promise<void> {
+  if (roomActionPending) return
   const input = document.getElementById('room-input') as HTMLInputElement
   const roomId = input.value.trim()
   landingRoomId = roomId
@@ -609,33 +711,74 @@ async function handleJoinRoom(): Promise<void> {
     render()
     return
   }
-  const exists = await checkRoom(roomId)
-  if (!exists) {
-    status = 'Room does not exist'
-    render()
-    return
-  }
-
-  if (isRoomOccupied(roomId)) {
-    status = 'Already connected to this room in another tab'
-    render()
-    return
-  }
-
-  await joinRoom(roomId)
+  await joinExistingRoom(roomId)
 }
 
-async function joinRoom(roomId: string): Promise<void> {
-  if (isRoomOccupied(roomId)) {
-    status = 'Already connected to this room in another tab'
-    currentView = 'landing'
+function takeLandingPassword(): string {
+  const input = document.getElementById('room-password') as HTMLInputElement | null
+  const password = input?.value || ''
+  if (input) input.value = ''
+  return password
+}
+
+async function joinExistingRoom(roomId: string, fromLink = false): Promise<void> {
+  if (roomActionPending) return
+  roomActionPending = true
+  let password = takeLandingPassword()
+  try {
+    if (isRoomOccupied(roomId)) {
+      throw new RoomAccessError('Already connected to this room in another tab')
+    }
+    status = 'Checking room...'
     render()
-    return
+    const room = await checkRoom(roomId)
+    if (!room.exists) throw new RoomAccessError('Room does not exist or has expired')
+    if (!await requestTermsAgreement()) {
+      status = ''
+      return
+    }
+    let errorMessage = ''
+    while (true) {
+      if (fromLink && room.passwordRequired) {
+        status = ''
+        let enteredPassword = await requestPassword(errorMessage)
+        if (enteredPassword === null) return
+        password = enteredPassword
+        enteredPassword = ''
+      }
+      if (room.passwordRequired && !password) {
+        throw new RoomAccessError('Please enter this room\'s password', 'password_required')
+      }
+      try {
+        const joining = joinRoom(roomId, room.passwordRequired, password)
+        password = ''
+        await joining
+        return
+      } catch (error) {
+        if (!fromLink || !room.passwordRequired || !(error instanceof RoomAccessError) || !error.canRetryPassword) {
+          throw error
+        }
+        errorMessage = error.message
+      }
+    }
+  } catch (error) {
+    status = error instanceof RoomAccessError ? error.message : 'Unable to join room. Please try again.'
+  } finally {
+    password = ''
+    roomActionPending = false
+    render()
+    if (currentView === 'landing') document.getElementById('room-password')?.focus()
+  }
+}
+
+async function joinRoom(roomId: string, passwordRequired: boolean, password: string): Promise<void> {
+  if (isRoomOccupied(roomId)) {
+    throw new RoomAccessError('Already connected to this room in another tab')
   }
 
-  if (!await requestTermsAgreement()) return
-
   canSend = false
+  status = 'Joining room...'
+  render()
 
   const newConnection = new ChatConnection(
     roomId,
@@ -667,8 +810,9 @@ async function joinRoom(roomId: string): Promise<void> {
       addNotification(color, 'has left', verified)
     },
     (newStatus) => {
-      canSend = connection?.canSend() || false
-      if (newStatus === 'Disconnected from room' || newStatus === 'This room has expired') {
+      canSend = newConnection.canSend()
+      status = newStatus
+      if (currentRoomId === roomId && newConnection.isClosed()) {
         onRoomLeft(roomId)
       }
       addSystemMessage(newStatus)
@@ -677,17 +821,29 @@ async function joinRoom(roomId: string): Promise<void> {
     handleTyping
   )
 
-  await newConnection.connect()
-
-  connection = newConnection
-  currentRoomId = roomId
-  onRoomJoined(roomId)
-  messageEncryptionKey = await newConnection.getMessageStorageKey()
-  messages = await loadMessages(roomId)
-  myPeerId = connection.getPeerId()
-  myColor = connection.getMyColor()
-  currentView = 'chat'
-  render()
+  try {
+    messageEncryptionKey = await newConnection.prepare()
+    messages = await loadMessages(roomId)
+    const connecting = newConnection.connect(passwordRequired, password)
+    password = ''
+    await connecting
+    if (newConnection.isClosed()) throw new RoomAccessError('Disconnected from room')
+    connection = newConnection
+    currentRoomId = roomId
+    onRoomJoined(roomId)
+    myPeerId = connection.getPeerId()
+    myColor = connection.getMyColor()
+    canSend = connection.canSend()
+    currentView = 'chat'
+    render()
+  } catch (error) {
+    newConnection.disconnect()
+    messageEncryptionKey = null
+    messages = []
+    throw error
+  } finally {
+    password = ''
+  }
 
   const url = new URL(window.location.href)
   url.searchParams.set('room', roomId)
@@ -729,17 +885,8 @@ async function init(): Promise<void> {
 
   if (roomId) {
     landingRoomId = roomId
-    const exists = await checkRoom(roomId)
-    if (exists) {
-      if (isRoomOccupied(roomId)) {
-        status = 'Already connected to this room in another tab'
-      } else {
-        await joinRoom(roomId)
-        return
-      }
-    } else {
-      status = 'Room does not exist or has expired'
-    }
+    await joinExistingRoom(roomId, true)
+    return
   }
 
   render()

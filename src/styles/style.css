@@ -80,6 +80,18 @@ hr {
   flex-wrap: wrap;
 }
 
+.room-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.actions button:disabled,
+.actions input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .footer-links {
   position: fixed;
   left: 50%;
@@ -636,6 +648,10 @@ hr {
 
   .actions {
     flex-direction: column;
+    width: 100%;
+  }
+
+  .room-fields {
     width: 100%;
   }
 

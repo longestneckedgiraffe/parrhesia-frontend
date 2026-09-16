@@ -5,7 +5,7 @@ export const config = {
   wsBase: API_BASE.replace(/^http/, 'ws'),
   endpoints: {
     createRoom: `${API_BASE}/api/rooms`,
-    checkRoom: (id: string) => `${API_BASE}/api/rooms/${id}`,
-    websocket: (roomId: string) => `${API_BASE.replace(/^http/, 'ws')}/ws/${roomId}`
+    checkRoom: (id: string) => `${API_BASE}/api/rooms/${encodeURIComponent(id)}`,
+    websocket: (roomId: string) => `${API_BASE.replace(/^http/, 'ws')}/ws/${encodeURIComponent(roomId)}`
   }
 }
