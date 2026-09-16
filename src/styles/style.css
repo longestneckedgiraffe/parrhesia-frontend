@@ -62,9 +62,8 @@ hr {
   text-align: left;
 }
 
-.mobile-title {
+.mobile-mark {
   display: none;
-  margin: 0;
 }
 
 .subtitle {
@@ -76,15 +75,27 @@ hr {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5em;
+  gap: 1em;
   flex-wrap: wrap;
+}
+
+.room-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+}
+
+.actions button:disabled,
+.actions input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .footer-links {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: 1em;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -604,7 +615,8 @@ hr {
     height: 100dvh;
   }
 
-  body.terms-page {
+  body.terms-page,
+  body.landing-page {
     overflow: auto;
     height: auto;
   }
@@ -617,37 +629,67 @@ hr {
   .landing {
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 0.5em;
+    max-width: 388px;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 10svh, 6rem) 24px max(1rem, env(safe-area-inset-bottom));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    justify-content: center;
   }
 
   .crow {
     display: none;
   }
 
-  .mobile-title,
-  .subtitle,
-  .landing hr {
+  .mobile-mark {
+    display: block;
+    width: 8rem;
+    height: 8rem;
+    margin: 0 auto;
+    mix-blend-mode: multiply;
+  }
+
+  :root[data-theme="dark"] .mobile-mark {
+    filter: invert(1);
+    mix-blend-mode: screen;
+  }
+
+  .landing .subtitle {
     display: none;
+  }
+
+  .landing hr {
+    margin: 1.5rem 0;
   }
 
   .actions {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     width: 100%;
+    gap: 1.25rem 0.75rem;
   }
 
-  .actions .or {
-    display: none;
+  .room-fields {
+    grid-column: 1 / -1;
+    width: 100%;
+    gap: 0.75rem;
   }
 
-  .actions input,
-  .actions button {
+  .actions input {
     width: 100%;
     box-sizing: border-box;
     font-size: 16px;
+    padding: 0.75em 1em;
+    scroll-margin-block: 1.5rem;
+  }
+
+  .actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.6em 0.75em;
+    font-size: 16px;
+    white-space: nowrap;
   }
 
   .chat {
@@ -689,12 +731,28 @@ hr {
     overflow-wrap: break-word;
   }
 
-  .footer-links {
-    bottom: 0.5em;
+  .landing .footer-links {
+    position: static;
+    margin-top: auto;
+    padding-top: 3rem;
+  }
+
+  .landing .footer-links a {
+    display: inline-block;
+    padding: 0.6rem 0;
+  }
+
+  .landing .footer-row {
+    gap: 1.25em;
   }
 
   .theme-toggle {
     display: none;
+  }
+
+  .landing .theme-toggle {
+    display: block;
+    position: static;
   }
 
   .modal-panel {

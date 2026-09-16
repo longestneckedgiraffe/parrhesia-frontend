@@ -1,6 +1,6 @@
 # Terms of Service
 
-Last updated: July 17, 2026
+Last updated: September 16, 2026
 
 These Terms of Service ("Terms") govern your use of parrhesia.chat and its related software and infrastructure (collectively, the "Service"). They are an agreement between you and Ridhwan Zaman, the individual operator of the Service ("Parrhesia," "we," "us," or "our").
 
@@ -38,12 +38,12 @@ Parrhesia does not verify the identity of room participants and cannot review or
 
 You may not use the Service to:
 
-- violate applicable law or the rights of others;
-- harass, threaten, stalk, defraud, exploit, or harm another person;
-- transmit content that you are not legally permitted to transmit;
-- distribute malware or malicious code;
-- gain unauthorized access to the Service or another system; or
-- disrupt, overload, or interfere with the security or operation of the Service.
+- Violate applicable law or the rights of others;
+- Harass, threaten, stalk, defraud, exploit, or harm another person;
+- Transmit content that you are not legally permitted to transmit;
+- Distribute malware or malicious code;
+- Gain unauthorized access to the Service or another system; or
+- Disrupt, overload, or interfere with the security or operation of the Service.
 
 We may take reasonable infrastructure-level measures, such as expiring or blocking a room or restricting access, when necessary to protect the Service, prevent abuse, or comply with law. Because message content is encrypted, these measures generally cannot target content we cannot access.
 
@@ -60,8 +60,6 @@ You may stop using the Service at any time.
 To the extent permitted by law, the Service is provided "as is" and "as available," without warranties of any kind, including implied warranties of merchantability, fitness for a particular purpose, title, and non-infringement. We do not guarantee that the Service will be uninterrupted, error-free, or secure against every possible attack.
 
 To the extent permitted by law, Ridhwan Zaman and contributors to Parrhesia will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of data, profits, revenue, goodwill, or reputation, arising from the Service or these Terms.
-
-Our total aggregate liability for claims arising from the Service or these Terms will not exceed one hundred U.S. dollars (US$100). These exclusions and limitations do not apply where applicable law does not permit them.
 
 ## 7. Open-Source Software
 
