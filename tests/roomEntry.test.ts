@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   onRoomJoined: vi.fn(),
   onRoomLeft: vi.fn(),
   isRoomOccupied: vi.fn().mockReturnValue(false),
+  initTabSync: vi.fn(),
+  clearLegacyStorage: vi.fn(),
   fetch: vi.fn()
 }))
 
@@ -38,14 +40,14 @@ vi.mock('../src/network/websocket', () => ({
 }))
 
 vi.mock('../src/utils/tabSync', () => ({
-  initTabSync: vi.fn(),
+  initTabSync: mocks.initTabSync,
   isRoomOccupied: mocks.isRoomOccupied,
   onRoomJoined: mocks.onRoomJoined,
   onRoomLeft: mocks.onRoomLeft
 }))
 
 vi.mock('../src/crypto/crypto', () => ({
-  clearLegacyStorage: vi.fn(),
+  clearLegacyStorage: mocks.clearLegacyStorage,
   encryptMessages: vi.fn(),
   decryptMessages: vi.fn(),
   isEncryptedData: vi.fn().mockReturnValue(false)
@@ -72,12 +74,16 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function loadPage(path = '/', agreed = true): Promise<void> {
+async function loadPage(path = '/', agreed = true, storageAvailable = true): Promise<void> {
   dom = new JSDOM('<div id="app"></div>', { url: `https://frontend.test${path}` })
   vi.stubGlobal('window', dom.window)
   vi.stubGlobal('document', dom.window.document)
   vi.stubGlobal('localStorage', dom.window.localStorage)
   if (agreed) localStorage.setItem('parrhesia-terms-agreement', JSON.stringify({ version: '2026-09-16' }))
+  if (!storageAvailable) {
+    const unavailable = () => { throw new Error('Storage is disabled') }
+    vi.stubGlobal('localStorage', { getItem: unavailable, setItem: unavailable, removeItem: unavailable })
+  }
   await import('../src/main')
 }
 
@@ -100,6 +106,48 @@ function submitPassword(value: string): void {
 }
 
 describe('room entry', () => {
+  it.each(['/', '/terms/'])('keeps %s readable with storage blocked and does not initialize chat', async path => {
+    await loadPage(path, false, false)
+    expect(document.querySelector('main h1')?.textContent?.trim()).toBeTruthy()
+    click('theme-toggle')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    expect(document.querySelector('main h1')?.textContent?.trim()).toBeTruthy()
+    expect(mocks.initTabSync).not.toHaveBeenCalled()
+    expect(mocks.clearLegacyStorage).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('preserves homepage Markdown when toggling theme and opening terms consent', async () => {
+    await loadPage('/', false)
+    const content = document.querySelector('.home-content')!.innerHTML
+    click('theme-toggle')
+    expect(document.querySelector('.home-content')!.innerHTML).toBe(content)
+    click('create-room')
+    expect(document.querySelector('.home-content')!.innerHTML).toBe(content)
+    expect(mocks.clearLegacyStorage).not.toHaveBeenCalled()
+    click('decline-terms')
+  })
+
+  it('shows a recoverable startup error before creating a room', async () => {
+    mocks.clearLegacyStorage.mockImplementationOnce(() => { throw new Error('Startup failed') })
+    await loadPage()
+    click('create-room')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Unable to load chat. Please try again.'))
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(input('create-room').disabled).toBe(false)
+    click('create-room')
+    const connection = await session()
+    connection.admit()
+    await vi.waitFor(() => expect(document.querySelector('.chat')).not.toBeNull())
+  })
+
+  it('excludes invitation views before checking room availability', async () => {
+    await loadPage('/?room=missing')
+    expect(document.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex')
+    await vi.waitFor(() => expect(document.getElementById('password-panel')).not.toBeNull())
+    click('cancel-password')
+  })
+
   it('adds one optional home password field and keeps it through theme changes', async () => {
     await loadPage()
     expect(document.querySelectorAll('input[type="password"]')).toHaveLength(1)
@@ -130,6 +178,7 @@ describe('room entry', () => {
     await vi.waitFor(() => expect(document.querySelector('.chat')).not.toBeNull())
     expect(mocks.onRoomJoined).toHaveBeenCalledWith('created-room')
     expect(window.location.search).toBe('?room=created-room')
+    expect(document.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex')
     expect(JSON.stringify(localStorage)).not.toContain(password)
     expect(document.body.innerHTML).not.toContain(password)
     expect(input('message-input').disabled).toBe(true)

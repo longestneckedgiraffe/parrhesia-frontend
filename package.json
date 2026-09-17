@@ -5,18 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
+    "build": "tsc && tsc -p tsconfig.tools.json && vite build",
+    "preview": "wrangler dev",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/node": "^24.13.5",
     "@types/qrcode": "^1.5.6",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0",
     "typescript": "~5.9.3",
     "vite": "npm:rolldown-vite@7.2.5",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "wrangler": "^4.133.0"
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.2.5"

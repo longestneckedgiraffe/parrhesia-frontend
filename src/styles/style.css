@@ -93,10 +93,7 @@ hr {
 }
 
 .footer-links {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 1em;
+  margin: 3em 0 1em;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -133,10 +130,30 @@ hr {
   bottom: 1em;
 }
 
-.theme-toggle a {
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
   color: var(--text-muted);
   text-decoration: underline;
   cursor: pointer;
+}
+
+.subtitle p {
+  margin: 0;
+}
+
+.landing .theme-toggle {
+  position: static;
+}
+
+.home-content {
+  margin: 3em auto 0;
+  max-width: 70ch;
+  text-align: left;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .terms {
@@ -217,7 +234,13 @@ hr {
 
 .actions input {
   background: var(--bg);
-  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 4px;
 }
 
 .chat {
@@ -757,7 +780,8 @@ hr {
     padding-top: 3rem;
   }
 
-  .landing .footer-links a {
+  .landing .footer-links a,
+  .landing .footer-links button {
     display: inline-block;
     padding: 0.6rem 0;
   }

@@ -1,12 +1,13 @@
 import './styles/style.css'
-import { ChatConnection } from './network/websocket'
+import type { ChatConnection } from './network/websocket'
 import { createRoom, checkRoom, RoomAccessError } from './network/rooms'
 import type { PeerColor } from './crypto/crypto'
-import { encryptMessages, decryptMessages, isEncryptedData, clearLegacyStorage } from './crypto/crypto'
 import { getStoredPeerKey, markAsVerified, generateSafetyNumber } from './crypto/tofu'
 import { generateQRCode, initializeScanner, scanQRCode, stopScanner, fingerprintKey } from './utils/qr'
 import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './utils/tabSync'
-import { renderMarkdown } from './utils/markdown'
+import { renderLandingPage, renderTermsPage } from './publicPages'
+import { getCurrentEffectiveTheme, toggleTheme, initTheme } from './theme'
+import homeMarkdown from './content/home.md?raw'
 import termsMarkdown from './content/terms.md?raw'
 
 const TERMS_VERSION = '2026-09-16'
@@ -16,53 +17,6 @@ interface TermsAgreement {
   version: string
   agreedAt: string
 }
-
-function getTheme(): 'light' | 'dark' | null {
-  return localStorage.getItem('parrhesia-theme') as 'light' | 'dark' | null
-}
-
-function setTheme(theme: 'light' | 'dark' | null): void {
-  if (theme) {
-    localStorage.setItem('parrhesia-theme', theme)
-    document.documentElement.setAttribute('data-theme', theme)
-  } else {
-    localStorage.removeItem('parrhesia-theme')
-    document.documentElement.removeAttribute('data-theme')
-  }
-}
-
-function getCurrentEffectiveTheme(): 'light' | 'dark' {
-  return getTheme() || 'light'
-}
-
-function toggleTheme(): void {
-  const current = getCurrentEffectiveTheme()
-  setTheme(current === 'light' ? 'dark' : 'light')
-}
-
-function initTheme(): void {
-  const stored = getTheme()
-  if (stored) {
-    document.documentElement.setAttribute('data-theme', stored)
-  }
-}
-
-const PARRHESIA_ASCII = `
-
-
-                                         ,---,
-,-.----.                               ,--.' |                            ,--,
-\\    /  \\              __  ,-.  __  ,-.|  |  :                          ,--.'|
-|   :    |           ,' ,'/ /|,' ,'/ /|:  :  :                .--.--.   |  |,
-|   | .\\ :  ,--.--.  '  | |' |'  | |' |:  |  |,--.   ,---.   /  /    '  \`--'_      ,--.--.
-.   : |: | /       \\ |  |   ,'|  |   ,'|  :  '   |  /     \\ |  :  /\`./  ,' ,'|    /       \\
-|   |  \\ :.--.  .-. |'  :  /  '  :  /  |  |   /' : /    /  ||  :  ;_    '  | |   .--.  .-. |
-|   : .  | \\__\\/: . .|  | '   |  | '   '  :  | | |.    ' / | \\  \\    \`. |  | :    \\__\\/: . .
-:     |\`-' ," .--.; |;  : |   ;  : |   |  |  ' | :'   ;   /|  \`----.   \\'  : |__  ," .--.; |
-:   : :   /  /  ,.  ||  , ;   |  , ;   |  :  :_:,''   |  / | /  /\`--'  /|  | '.'|/  /  ,.  |
-|   | :  ;  :   .'   \\---'     ---'    |  | ,'    |   :    |'--'.     / ;  :    ;  :   .'   \\
-\`---'.|  |  ,     .-./                 \`--''       \\   \\  /   \`--'---'  |  ,   /|  ,     .-./
-  \`---\`   \`--\`---'                                  \`----'               ---\`-'  \`--\`---'`
 
 type View = 'landing' | 'chat' | 'terms'
 
@@ -85,6 +39,7 @@ function getStorageKey(roomId: string): string {
 
 async function saveMessages(): Promise<void> {
   if (!currentRoomId || !messageEncryptionKey) return
+  const { encryptMessages } = await import('./crypto/crypto')
   const encrypted = await encryptMessages(messages, messageEncryptionKey)
   localStorage.setItem(getStorageKey(currentRoomId), JSON.stringify(encrypted))
 }
@@ -93,6 +48,7 @@ async function loadMessages(roomId: string): Promise<Message[]> {
   const stored = localStorage.getItem(getStorageKey(roomId))
   if (!stored) return []
   try {
+    const { isEncryptedData, decryptMessages } = await import('./crypto/crypto')
     const parsed = JSON.parse(stored)
     if (isEncryptedData(parsed)) {
       if (!messageEncryptionKey) return []
@@ -144,6 +100,40 @@ const TYPING_THROTTLE_MS = 2000
 const TYPING_TIMEOUT_MS = 3000
 let typingPeers: Map<string, { color: PeerColor; timeout: ReturnType<typeof setTimeout> }> = new Map()
 let lastTypingSent = 0
+let chatRuntime: Promise<typeof import('./network/websocket')> | null = null
+
+function loadChatRuntime(): Promise<typeof import('./network/websocket')> {
+  if (!chatRuntime) {
+    chatRuntime = Promise.all([import('./network/websocket'), import('./crypto/crypto')])
+      .then(([network, crypto]) => {
+        crypto.clearLegacyStorage()
+        initTabSync()
+        return network
+      })
+      .catch(() => {
+        chatRuntime = null
+        throw new RoomAccessError('Unable to load chat. Please try again.')
+      })
+  }
+  return chatRuntime
+}
+
+function setRoomMetadata(): void {
+  let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]')
+  if (!robots) {
+    robots = document.createElement('meta')
+    robots.name = 'robots'
+    document.head.append(robots)
+  }
+  robots.content = 'noindex'
+  document.title = 'parrhesia'
+  document.querySelector('link[rel="canonical"]')?.remove()
+  document.querySelector('meta[property="og:url"]')?.remove()
+  document.querySelector('script[type="application/ld+json"]')?.remove()
+  document.querySelector('meta[property="og:title"]')?.setAttribute('content', 'parrhesia')
+  document.querySelector('meta[property="og:description"]')?.setAttribute('content', 'end-to-end encrypted chat')
+  document.querySelector('meta[name="description"]')?.setAttribute('content', 'end-to-end encrypted chat')
+}
 
 function render(): void {
   const app = document.querySelector<HTMLDivElement>('#app')!
@@ -186,37 +176,12 @@ function render(): void {
 function renderLanding(app: HTMLDivElement): void {
   const theme = getCurrentEffectiveTheme()
 
-  app.innerHTML = `
-    <div class="landing" ${showTermsAgreementModal || showPasswordModal ? 'inert' : ''}>
-      <pre class="crow">${PARRHESIA_ASCII}</pre>
-      <img class="mobile-mark" src="/favicon/favicon.svg" alt="Parrhesia" width="128" height="128">
-      <p class="subtitle"><i>Loquere libere; nihil manet.</i></p>
-      <hr>
-      <div class="actions">
-        <div class="room-fields">
-          <input type="text" id="room-input" placeholder="room id" aria-label="Room ID" ${roomActionPending ? 'disabled' : ''}>
-          <input type="password" id="room-password" placeholder="password (optional)" aria-label="Room password (optional)" autocomplete="current-password" ${roomActionPending ? 'disabled' : ''}>
-        </div>
-        <button id="join-room" ${roomActionPending ? 'disabled' : ''}>Join</button>
-        <span class="or">or</span>
-        <button id="create-room" ${roomActionPending ? 'disabled' : ''}>Create Room</button>
-      </div>
-      ${status ? '<p role="status"><b>Status:</b> <span id="room-status"></span></p>' : ''}
-      <div class="footer-links">
-        <div class="footer-row">
-          <a id="source-toggle" class="source-toggle">source code</a>
-          <a href="?terms" class="terms-link">terms</a>
-          <div class="theme-toggle">
-            <a id="theme-toggle">${theme}</a>
-          </div>
-        </div>
-        <div class="source-links">
-          <a href="https://github.com/longestneckedgiraffe/parrhesia-frontend">frontend</a>
-          <a href="https://github.com/longestneckedgiraffe/parrhesia-backend">backend</a>
-        </div>
-      </div>
-    </div>
-  `
+  app.innerHTML = renderLandingPage(homeMarkdown, {
+    disabled: roomActionPending,
+    inert: showTermsAgreementModal || showPasswordModal,
+    status: Boolean(status),
+    theme
+  })
   const roomInput = document.getElementById('room-input') as HTMLInputElement
   roomInput.value = landingRoomId
   const statusElement = document.getElementById('room-status')
@@ -230,7 +195,8 @@ function renderLanding(app: HTMLDivElement): void {
     if ((e as KeyboardEvent).key === 'Enter') handleJoinRoom()
   })
   document.getElementById('source-toggle')?.addEventListener('click', () => {
-    document.querySelector('.source-links')?.classList.toggle('visible')
+    const expanded = document.querySelector('.source-links')?.classList.toggle('visible')
+    document.getElementById('source-toggle')?.setAttribute('aria-expanded', String(Boolean(expanded)))
   })
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     toggleTheme()
@@ -241,15 +207,7 @@ function renderLanding(app: HTMLDivElement): void {
 function renderTerms(app: HTMLDivElement): void {
   const theme = getCurrentEffectiveTheme()
 
-  app.innerHTML = `
-    <div class="terms">
-      <a href="/" class="back-link">back</a>
-      <div class="terms-content">${renderMarkdown(termsMarkdown)}</div>
-    </div>
-    <div class="theme-toggle">
-      <a id="theme-toggle">${theme}</a>
-    </div>
-  `
+  app.innerHTML = renderTermsPage(termsMarkdown, theme)
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     toggleTheme()
     render()
@@ -290,7 +248,7 @@ function renderTermsAgreementModal(): string {
         <div class="verification-header">
           <button type="button" class="close-link" id="decline-terms">Not now</button>
         </div>
-        <div class="verification-info" id="terms-agreement-description">To create or join a room, confirm that you meet the age requirement and agree to the <a href="?terms" target="_blank">terms of service</a>.</div>
+        <div class="verification-info" id="terms-agreement-description">To create or join a room, confirm that you meet the age requirement and agree to the <a href="/terms/" target="_blank">terms of service</a>.</div>
         <div class="verification-actions">
           <button type="button" class="action-link" id="accept-terms">I agree</button>
         </div>
@@ -515,7 +473,7 @@ function renderChat(app: HTMLDivElement): void {
       </div>
     </div>
     <div class="theme-toggle">
-      <a id="theme-toggle">${theme}</a>
+      <button type="button" id="theme-toggle" class="link-button">${theme}</button>
     </div>
     ${verificationPanel}
   `
@@ -686,6 +644,7 @@ async function handleCreateRoom(): Promise<void> {
     if (!await requestTermsAgreement()) return
     status = 'Creating room...'
     render()
+    await loadChatRuntime()
     const room = await createRoom(password)
     landingRoomId = room.roomId
     const input = document.getElementById('room-input') as HTMLInputElement | null
@@ -781,6 +740,7 @@ async function joinRoom(roomId: string, passwordRequired: boolean, password: str
   status = 'Joining room...'
   render()
 
+  const { ChatConnection } = await loadChatRuntime()
   const newConnection = new ChatConnection(
     roomId,
     async (peerId, color, text) => {
@@ -836,6 +796,7 @@ async function joinRoom(roomId: string, passwordRequired: boolean, password: str
     myColor = connection.getMyColor()
     canSend = connection.canSend()
     currentView = 'chat'
+    setRoomMetadata()
     render()
   } catch (error) {
     newConnection.disconnect()
@@ -872,15 +833,18 @@ async function handleSendMessage(): Promise<void> {
 
 async function init(): Promise<void> {
   initTheme()
-  initTabSync()
-  clearLegacyStorage()
   const url = new URL(window.location.href)
 
-  if (url.searchParams.has('terms')) {
+  if (url.searchParams.has('room')) setRoomMetadata()
+
+  const legacyTerms = (url.pathname === '/' || url.pathname === '/index.html') && url.searchParams.has('terms')
+  if (url.pathname === '/terms/' || legacyTerms) {
     currentView = 'terms'
     render()
     return
   }
+
+  if (url.pathname !== '/' && url.pathname !== '/index.html' && url.pathname !== '/room.html') return
 
   const roomId = url.searchParams.get('room')
 

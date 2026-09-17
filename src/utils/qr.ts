@@ -1,7 +1,5 @@
-import QRCode from 'qrcode'
-import jsQR from 'jsqr'
-
 let scannerStream: MediaStream | null = null
+let scanImage: typeof import('jsqr').default | null = null
 
 export async function fingerprintKey(publicKey: string): Promise<string> {
   const data = new TextEncoder().encode(publicKey)
@@ -10,6 +8,7 @@ export async function fingerprintKey(publicKey: string): Promise<string> {
 }
 
 export async function generateQRCode(publicKey: string): Promise<string> {
+  const { default: QRCode } = await import('qrcode')
   const fingerprint = await fingerprintKey(publicKey)
   return QRCode.toDataURL(fingerprint, {
     width: 600,
@@ -19,6 +18,8 @@ export async function generateQRCode(publicKey: string): Promise<string> {
 }
 
 export async function initializeScanner(videoElement: HTMLVideoElement): Promise<void> {
+  const { default: jsQR } = await import('jsqr')
+  scanImage = jsQR
   scannerStream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: 'environment' }
   })
@@ -40,7 +41,7 @@ export function scanQRCode(videoElement: HTMLVideoElement): string | null {
   ctx.drawImage(videoElement, 0, 0)
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
 
-  const code = jsQR(imageData.data, imageData.width, imageData.height)
+  const code = scanImage?.(imageData.data, imageData.width, imageData.height)
   return code?.data || null
 }
 
