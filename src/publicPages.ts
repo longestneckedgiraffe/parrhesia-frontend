@@ -24,9 +24,9 @@ interface LandingOptions {
   theme?: 'light' | 'dark'
 }
 
-export function renderLandingPage(markdown: string, options: LandingOptions = {}): string {
+export function renderLandingPage(options: LandingOptions = {}): string {
   return `
-    <main ${options.inert ? 'inert' : ''}>
+    <main aria-label="Parrhesia" ${options.inert ? 'inert' : ''}>
       <div class="landing">
         <pre class="crow" aria-hidden="true">${PARRHESIA_ASCII}</pre>
         <img class="mobile-mark" src="/favicon/favicon.svg" alt="" width="128" height="128">
@@ -57,7 +57,6 @@ export function renderLandingPage(markdown: string, options: LandingOptions = {}
           </div>
         </footer>
       </div>
-      <article class="home-content terms-content">${renderMarkdown(markdown)}</article>
     </main>
   `
 }

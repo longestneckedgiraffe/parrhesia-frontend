@@ -7,7 +7,6 @@ import { generateQRCode, initializeScanner, scanQRCode, stopScanner, fingerprint
 import { initTabSync, isRoomOccupied, onRoomJoined, onRoomLeft } from './utils/tabSync'
 import { renderLandingPage, renderTermsPage } from './publicPages'
 import { getCurrentEffectiveTheme, toggleTheme, initTheme } from './theme'
-import homeMarkdown from './content/home.md?raw'
 import termsMarkdown from './content/terms.md?raw'
 
 const TERMS_VERSION = '2026-09-16'
@@ -176,7 +175,7 @@ function render(): void {
 function renderLanding(app: HTMLDivElement): void {
   const theme = getCurrentEffectiveTheme()
 
-  app.innerHTML = renderLandingPage(homeMarkdown, {
+  app.innerHTML = renderLandingPage({
     disabled: roomActionPending,
     inert: showTermsAgreementModal || showPasswordModal,
     status: Boolean(status),

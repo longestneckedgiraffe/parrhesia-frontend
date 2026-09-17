@@ -108,24 +108,14 @@ function submitPassword(value: string): void {
 describe('room entry', () => {
   it.each(['/', '/terms/'])('keeps %s readable with storage blocked and does not initialize chat', async path => {
     await loadPage(path, false, false)
-    expect(document.querySelector('main h1')?.textContent?.trim()).toBeTruthy()
+    const content = path === '/terms/' ? 'Terms of Service' : 'Loquere libere; nihil manet.'
+    expect(document.querySelector('main')?.textContent).toContain(content)
     click('theme-toggle')
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-    expect(document.querySelector('main h1')?.textContent?.trim()).toBeTruthy()
+    expect(document.querySelector('main')?.textContent).toContain(content)
     expect(mocks.initTabSync).not.toHaveBeenCalled()
     expect(mocks.clearLegacyStorage).not.toHaveBeenCalled()
     expect(mocks.fetch).not.toHaveBeenCalled()
-  })
-
-  it('preserves homepage Markdown when toggling theme and opening terms consent', async () => {
-    await loadPage('/', false)
-    const content = document.querySelector('.home-content')!.innerHTML
-    click('theme-toggle')
-    expect(document.querySelector('.home-content')!.innerHTML).toBe(content)
-    click('create-room')
-    expect(document.querySelector('.home-content')!.innerHTML).toBe(content)
-    expect(mocks.clearLegacyStorage).not.toHaveBeenCalled()
-    click('decline-terms')
   })
 
   it('shows a recoverable startup error before creating a room', async () => {

@@ -20,7 +20,7 @@ export function renderPage(template: string, path: string): string {
     ? '<main class="terms"><h1>Page not found</h1><a href="/" class="back-link">back to Parrhesia</a></main>'
     : terms
       ? renderTermsPage(readFileSync(new URL('../src/content/terms.md', import.meta.url), 'utf8'))
-      : renderLandingPage(readFileSync(new URL('../src/content/home.md', import.meta.url), 'utf8'), { disabled: true })
+      : renderLandingPage({ disabled: true })
   const head = `
     <title>${escapeHtml(metadata.title)}</title>
     <meta name="description" content="${escapeHtml(metadata.description)}" />

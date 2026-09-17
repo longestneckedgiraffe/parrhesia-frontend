@@ -24,15 +24,15 @@ afterAll(async () => {
 
 describe('development HTTP routes', () => {
   it.each([
-    ['/', 'home-content'],
+    ['/', 'id="create-room"'],
     ['/terms/', 'Terms of Service'],
-    ['/?room=synthetic', 'home-content']
+    ['/?room=synthetic', 'id="create-room"']
   ])('serves initial HTML at %s', async (path, content) => {
     const response = await fetch(origin + path)
     const html = await response.text()
     expect(response.status).toBe(200)
     expect(html).toContain(content)
-    expect(html).toMatch(/<h1>[\s\S]+?<\/h1>/)
+    expect(html).toMatch(/<main[\s>]/)
     expect(html).not.toContain('{{PAGE_')
     expect(response.headers.get('X-Robots-Tag')).toBe(path.includes('room=') ? 'noindex' : null)
   })
@@ -52,7 +52,7 @@ describe('development HTTP routes', () => {
   it.each([
     ['/robots.txt', 'text/plain', 'User-agent: *'],
     ['/sitemap.xml', 'application/xml', '<urlset'],
-    ['/src/content/home.md?import&raw', 'javascript', 'export default']
+    ['/src/content/terms.md?import&raw', 'javascript', 'export default']
   ])('preserves %s as its actual resource type', async (path, type, content) => {
     const response = await fetch(origin + path)
     expect(response.status).toBe(200)

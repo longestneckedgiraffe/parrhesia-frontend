@@ -7,13 +7,13 @@ import { pageMetadata } from '../src/content/metadata'
 const template = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 
 describe('public HTML without JavaScript', () => {
-  it('contains readable Markdown, semantic landmarks, and crawlable navigation', () => {
+  it('contains page metadata, semantic landmarks, and crawlable navigation', () => {
     const dom = new JSDOM(renderPage(template, '/'))
     const document = dom.window.document
     expect(document.querySelectorAll('main')).toHaveLength(1)
-    expect(document.querySelectorAll('h1')).toHaveLength(1)
-    expect(document.querySelector('h1')?.textContent?.trim()).toBeTruthy()
-    expect(document.querySelector('.home-content p')?.textContent?.trim()).toBeTruthy()
+    expect(document.querySelector('main')?.getAttribute('aria-label')).toBe('Parrhesia')
+    expect(document.title).toBe(pageMetadata.home.title)
+    expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toBe(pageMetadata.home.description)
     expect(document.querySelector('nav a[href="/terms/"]')).not.toBeNull()
     expect(document.querySelector('footer a[href^="https://github.com/"]')).not.toBeNull()
     expect(document.querySelector('meta[name="robots"]')).toBeNull()
