@@ -96,7 +96,10 @@ hr {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 1em;
+  bottom: 0;
+  z-index: 1;
+  padding: 0.5em 0 1em;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -133,10 +136,18 @@ hr {
   bottom: 1em;
 }
 
-.theme-toggle a {
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
   color: var(--text-muted);
   text-decoration: underline;
   cursor: pointer;
+}
+
+.subtitle p {
+  margin: 0;
 }
 
 .terms {
@@ -217,7 +228,13 @@ hr {
 
 .actions input {
   background: var(--bg);
-  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 4px;
 }
 
 .chat {
@@ -754,10 +771,11 @@ hr {
   .landing .footer-links {
     position: static;
     margin-top: auto;
-    padding-top: 3rem;
+    padding: 3rem 0 0;
   }
 
-  .landing .footer-links a {
+  .landing .footer-links a,
+  .landing .footer-links button {
     display: inline-block;
     padding: 0.6rem 0;
   }
