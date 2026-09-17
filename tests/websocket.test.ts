@@ -96,12 +96,16 @@ describe('WebSocket admission', () => {
     expect(session.connection.canSend()).toBe(false)
   })
 
-  it('retains the version-1 handshake for open rooms', async () => {
+  it.each([true, false])('admits an open-room participant without joined (creator: %s)', async is_creator => {
     const session = await start(false, '')
-    await session.socket.receive({ type: 'welcome', protocol_version: 1, peer_id: 'me' })
-    await session.socket.receive({ type: 'joined' })
+    await session.socket.receive({ type: 'welcome', protocol_version: 1, peer_id: 'me', is_creator })
+    expect(session.admitted()).toBe(true)
     expect(await session.result).toBeNull()
     expect(session.socket.sent.map(frame => frame.type)).toEqual(['key_announce'])
+    expect(session.connection.canSend()).toBe(true)
+    // An open relay can immediately send peer information without an acknowledgement.
+    await session.socket.receive({ type: 'peer_key', peer_id: 'other' })
+    expect(session.connection.isClosed()).toBe(false)
   })
 
   it.each([1, undefined])('refuses a protected welcome without authentication (version %s)', async protocol_version => {
