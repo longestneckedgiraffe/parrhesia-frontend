@@ -126,6 +126,13 @@ export class ChatConnection {
     this.joinRejecter = null
   }
 
+  private completeAdmission(): void {
+    this.state = 'joined'
+    const resolve = this.joinResolver
+    this.clearHandshake()
+    resolve?.()
+  }
+
   private fail(error: RoomAccessError, reportStatus = true): void {
     if (this.isClosed()) return
     this.state = 'closed'
@@ -198,14 +205,13 @@ export class ChatConnection {
           pq_public_key: pqPublicKey,
           sig: sig || undefined
         })
+        // Protocol 1 has no admission acknowledgement after key announcement.
+        if (!this.passwordRequired) this.completeAdmission()
         break
 
       case 'joined': {
-        if (this.state !== 'joining') throw new Error('Unexpected admission')
-        this.state = 'joined'
-        const resolve = this.joinResolver
-        this.clearHandshake()
-        resolve?.()
+        if (!this.passwordRequired || this.state !== 'joining') throw new Error('Unexpected admission')
+        this.completeAdmission()
         break
       }
 
