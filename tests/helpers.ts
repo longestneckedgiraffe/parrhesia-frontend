@@ -35,8 +35,8 @@ async function makeMember(id: string, isCreator: boolean, creatorId: string): Pr
   return { id, mgr, signPub, pqPub, sig }
 }
 
-export async function buildGroup(n: number): Promise<Member[]> {
-  const ids = PEER_IDS.slice(0, n)
+export async function buildGroup(n: number, peerIds = PEER_IDS): Promise<Member[]> {
+  const ids = peerIds.slice(0, n)
   const creatorId = ids[0]
   const creator = await makeMember(creatorId, true, creatorId)
   await creator.mgr.generateAndSetGroupKey()

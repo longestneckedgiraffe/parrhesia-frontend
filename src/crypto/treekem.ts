@@ -41,6 +41,9 @@ export interface TreeKemCommit {
 
 export interface TreeKemWelcome {
   treePublicKeys: (string | null)[]
+  leafPeerIds?: (string | null)[]
+  senderPeerId?: string
+  signature?: string
   numLeaves: number
   myLeafPos: number
   pathSecrets: TreeKemPathEntry[]

@@ -418,7 +418,7 @@ export class GroupKeyManager {
     }
   }
 
-  async addPeer(peerId: string, publicKeyBase64: string, pqPublicKeyBase64: string, sigBase64?: string): Promise<void> {
+  async addPeer(peerId: string, publicKeyBase64: string, pqPublicKeyBase64: string, sigBase64?: string): Promise<boolean> {
     if (!this.signingKeyPair) throw new Error('Signing key pair not initialized')
     if (!isValidMlKemPublicKey(pqPublicKeyBase64)) throw new Error('Invalid ML-KEM public key')
 
@@ -429,6 +429,15 @@ export class GroupKeyManager {
       if (!verify(signingPub, pqPubBytes, sigBytes)) {
         throw new Error('Invalid ML-DSA signature on ML-KEM public key')
       }
+    }
+
+    const existingPublicKey = this.peerPublicKeys.get(peerId)
+    if (existingPublicKey) {
+      const existingMlKemKey = this.peerMlKemPublicKeys.get(peerId)
+      if (existingPublicKey !== publicKeyBase64 || !existingMlKemKey || uint8ArrayToBase64(existingMlKemKey) !== pqPublicKeyBase64) {
+        throw new Error('Peer keys changed during an active connection')
+      }
+      return false
     }
 
     this.peerPublicKeys.set(peerId, publicKeyBase64)
@@ -450,6 +459,7 @@ export class GroupKeyManager {
         skippedKeys: new Map()
       })
     }
+    return true
   }
 
   removePeer(peerId: string): void {
@@ -459,7 +469,9 @@ export class GroupKeyManager {
     this.peerMlKemPublicKeys.delete(peerId)
     this.peerSigningKeys.delete(peerId)
     this.peerChainStates.delete(peerId)
-    if (pubKey) this.colorPreferences.delete(pubKey)
+    if (pubKey && pubKey !== this.myPublicKey && !Array.from(this.peerPublicKeys.values()).includes(pubKey)) {
+      this.colorPreferences.delete(pubKey)
+    }
     if (this.treeState) {
       const leafPos = this.peerLeafPositions.get(peerId)
       if (leafPos !== undefined) {
@@ -472,20 +484,20 @@ export class GroupKeyManager {
 
   private recomputeColors(): void {
     const allEntries: { id: string; publicKey: string }[] = [
-      { id: '__self__', publicKey: this.myPublicKey }
+      { id: this.myPeerId, publicKey: this.myPublicKey }
     ]
     for (const [peerId, pubKey] of this.peerPublicKeys) {
       allEntries.push({ id: peerId, publicKey: pubKey })
     }
 
-    allEntries.sort((a, b) => a.publicKey.localeCompare(b.publicKey))
+    allEntries.sort((a, b) => a.publicKey.localeCompare(b.publicKey) || a.id.localeCompare(b.id))
 
     const taken = new Set<PeerColor>()
     for (const entry of allEntries) {
       const prefs = this.colorPreferences.get(entry.publicKey)!
       const color = prefs.find(c => !taken.has(c)) || prefs[0]
       taken.add(color)
-      if (entry.id === '__self__') {
+      if (entry.id === this.myPeerId) {
         this.myColor = color
       } else {
         this.peerColors.set(entry.id, color)
@@ -499,27 +511,72 @@ export class GroupKeyManager {
 
   async generateWelcomeForPeer(peerId: string): Promise<TreeKemWelcome> {
     if (!this.treeState) throw new Error('Tree state not initialized')
+    if (!this.signingKeyPair) throw new Error('Signing key pair not initialized')
     const leafPos = this.peerLeafPositions.get(peerId)
     if (leafPos === undefined) throw new Error(`No leaf position for peer ${peerId}`)
     const peerMlKemPub = this.peerMlKemPublicKeys.get(peerId)
     if (!peerMlKemPub) throw new Error(`No ML-KEM public key for peer ${peerId}`)
-    return this.treeState.generateWelcome(leafPos, peerMlKemPub, this.epoch)
+    const welcome = await this.treeState.generateWelcome(leafPos, peerMlKemPub, this.epoch)
+    const leafPeerIds: (string | null)[] = Array(this.treeState.numLeaves).fill(null)
+    leafPeerIds[this.treeState.myLeafPos] = this.myPeerId
+    for (const [id, position] of this.peerLeafPositions) {
+      leafPeerIds[position] = id
+    }
+    const unsignedWelcome = { ...welcome, leafPeerIds, senderPeerId: this.myPeerId }
+    const signature = sign(this.signingKeyPair.secretKey, new TextEncoder().encode(JSON.stringify(unsignedWelcome)))
+    return { ...unsignedWelcome, signature: uint8ArrayToBase64(signature) }
   }
 
   async receiveWelcome(welcome: TreeKemWelcome): Promise<void> {
     if (!this.mlKemKeyPair) throw new Error('ML-KEM key pair not initialized')
-    this.treeState = await TreeKemState.fromWelcome(welcome, this.mlKemKeyPair)
+    const peerLeafPositions = new Map<string, number>()
+    if (welcome.leafPeerIds !== undefined) {
+      const { signature, ...unsignedWelcome } = welcome
+      const senderKey = welcome.senderPeerId ? this.peerSigningKeys.get(welcome.senderPeerId) : undefined
+      if (!signature || !senderKey || !verify(senderKey, new TextEncoder().encode(JSON.stringify(unsignedWelcome)), base64ToUint8Array(signature))) {
+        throw new Error('Invalid tree membership signature')
+      }
+      if (!Array.isArray(welcome.leafPeerIds) || welcome.leafPeerIds.length !== welcome.numLeaves || welcome.leafPeerIds[welcome.myLeafPos] !== this.myPeerId) {
+        throw new Error('Invalid tree membership')
+      }
+      const memberIds = new Set<string>()
+      for (const [position, peerId] of welcome.leafPeerIds.entries()) {
+        if (peerId === null) continue
+        if (typeof peerId !== 'string' || !peerId || memberIds.has(peerId) || !welcome.treePublicKeys[2 * position]) {
+          throw new Error('Invalid tree membership')
+        }
+        memberIds.add(peerId)
+        if (peerId !== this.myPeerId) peerLeafPositions.set(peerId, position)
+      }
+    } else {
+      for (const [peerId, publicKey] of this.peerMlKemPublicKeys) {
+        const encodedKey = uint8ArrayToBase64(publicKey)
+        for (let position = 0; position < welcome.numLeaves; position++) {
+          if (position !== welcome.myLeafPos && welcome.treePublicKeys[2 * position] === encodedKey) {
+            peerLeafPositions.set(peerId, position)
+            break
+          }
+        }
+      }
+    }
+    const treeState = await TreeKemState.fromWelcome(welcome, this.mlKemKeyPair)
+    const groupKey = await deriveRootGroupKey(treeState.getRootSecret())
+    this.treeState = treeState
+    this.peerLeafPositions = peerLeafPositions
     this.epoch = welcome.epoch
-    this.groupKey = await deriveRootGroupKey(this.treeState.getRootSecret())
+    this.groupKey = groupKey
     await this.initializeChains()
   }
 
-  async receiveCommit(commit: TreeKemCommit): Promise<void> {
+  async receiveCommit(commit: TreeKemCommit, committerPeerId?: string): Promise<void> {
     if (!this.treeState) throw new Error('Tree state not initialized')
     this.savePreviousEpochChains()
     this.epoch = commit.epoch
     const rootSecret = await this.treeState.processCommit(commit)
     this.groupKey = await deriveRootGroupKey(rootSecret)
+    if (committerPeerId && this.peerPublicKeys.has(committerPeerId)) {
+      this.peerLeafPositions.set(committerPeerId, commit.committerLeafPos)
+    }
     await this.initializeChains()
   }
 

@@ -216,6 +216,7 @@ export class ChatConnection {
       }
 
       case 'peer_key':
+      case 'peer_joined':
         if (data.peer_id && data.public_key) {
           if (!isValidPublicKey(data.public_key)) {
             console.error('Received invalid public key from peer', data.peer_id)
@@ -240,48 +241,7 @@ export class ChatConnection {
           }
 
           try {
-            await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key, data.sig)
-          } catch (e) {
-            console.error('Peer rejected:', e)
-            this.onStatus('A peer was rejected: invalid signature')
-            return
-          }
-          const color = this.keyManager.getPeerColor(data.peer_id)
-          this.onPeerJoined(data.peer_id, color, data.public_key)
-
-          if (this.keyManager.hasTreeState() && this.keyManager.shouldInitiateRekey(data.peer_id)) {
-            await this.sendTreeCommit()
-            await this.sendTreeWelcome(data.peer_id)
-          }
-        }
-        break
-
-      case 'peer_joined':
-        if (data.peer_id && data.public_key) {
-          if (!isValidPublicKey(data.public_key)) {
-            console.error('Received invalid public key from peer', data.peer_id)
-            return
-          }
-          if (!data.pq_public_key) {
-            this.onStatus('A peer was rejected: no post-quantum key support')
-            return
-          }
-          const keyCheck2 = checkPeerKey(this.roomId, data.peer_id, data.public_key)
-
-          if (keyCheck2.status === 'key_changed') {
-            if (this.onKeyChange) {
-              const color = await deriveColorFromPublicKey(data.public_key)
-              this.onKeyChange(data.peer_id, color)
-            }
-            return
-          }
-
-          if (keyCheck2.isNewKey) {
-            storePeerKey(this.roomId, data.peer_id, data.public_key)
-          }
-
-          try {
-            await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key, data.sig)
+            if (!await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key, data.sig)) return
           } catch (e) {
             console.error('Peer rejected:', e)
             this.onStatus('A peer was rejected: invalid signature')
@@ -326,7 +286,7 @@ export class ChatConnection {
         if (data.tree_commit) {
           try {
             const commit: TreeKemCommit = JSON.parse(data.tree_commit)
-            await this.keyManager.receiveCommit(commit)
+            await this.keyManager.receiveCommit(commit, data.peer_id)
             this.messagesSinceRekey = 0
             this.onStatus('Encryption key rotated')
           } catch (e) {
