@@ -9,7 +9,9 @@ const keys = vi.hoisted(() => ({
   getMlKemPublicKeyBase64: vi.fn().mockReturnValue('kem-key'),
   signMlKemPublicKey: vi.fn().mockReturnValue('signature'),
   hasChain: vi.fn().mockReturnValue(true),
-  hasPeers: vi.fn().mockReturnValue(true)
+  hasPeers: vi.fn().mockReturnValue(true),
+  getPeerIds: vi.fn().mockReturnValue(['other']),
+  getPeerPublicKey: vi.fn().mockReturnValue('other-key')
 }))
 
 vi.mock('../src/crypto/crypto', () => ({
@@ -86,7 +88,7 @@ describe('WebSocket admission', () => {
     expect(session.socket.sent).toEqual([{ type: 'authenticate', password: 'café telescopes drift slowly' }])
     expect(session.admitted()).toBe(false)
     await session.socket.receive({ type: 'welcome', protocol_version: 2, peer_id: 'me', is_creator: true })
-    expect(session.socket.sent[1]).toEqual({ type: 'key_announce', public_key: 'signing-key', pq_public_key: 'kem-key', sig: 'signature' })
+    expect(session.socket.sent[1]).toEqual({ type: 'key_announce', public_key: 'signing-key', pq_public_key: 'kem-key', sig: 'signature', peer_snapshot: true })
     expect(session.admitted()).toBe(false)
     expect(session.connection.canSend()).toBe(false)
     await session.socket.receive({ type: 'joined' })
@@ -148,7 +150,7 @@ describe('WebSocket admission', () => {
     expect(session.connection.isClosed()).toBe(true)
   })
 
-  it.each(['joined', 'message', 'peer_key'])('rejects %s before admission', async type => {
+  it.each(['joined', 'message', 'peer_key', 'peer_snapshot'])('rejects %s before admission', async type => {
     const session = await start()
     await session.socket.receive({ type, peer_id: 'other', payload: 'secret' })
     expect((await session.result).message).toContain('Invalid response')

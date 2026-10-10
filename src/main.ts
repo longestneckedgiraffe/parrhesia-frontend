@@ -21,6 +21,7 @@ type View = 'landing' | 'chat' | 'terms'
 
 interface Message {
   peerId: string
+  identityId?: string
   color: PeerColor
   text: string
   isMine: boolean
@@ -64,8 +65,9 @@ function addSystemMessage(text: string): void {
   render()
 }
 
-async function addNotification(color: PeerColor, text: string, verified?: boolean): Promise<void> {
-  messages.push({ peerId: 'notification', color, text, isMine: false, isNotification: true, verified })
+async function addNotification(peerId: string, color: PeerColor, text: string, publicKey?: string, verified?: boolean): Promise<void> {
+  const identityId = publicKey ? await fingerprintKey(publicKey) : undefined
+  messages.push({ peerId, identityId, color, text, isMine: false, isNotification: true, verified })
   await saveMessages()
   render()
 }
@@ -743,23 +745,21 @@ async function joinRoom(roomId: string, passwordRequired: boolean, password: str
   const newConnection = new ChatConnection(
     roomId,
     async (peerId, color, text) => {
-      const publicKey = connection?.getPeerPublicKey(peerId)
+      const publicKey = newConnection.getPeerPublicKey(peerId)
+      const identityId = publicKey ? await fingerprintKey(publicKey) : undefined
+      if (newConnection.isClosed()) return
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
-      messages.push({ peerId, color, text, isMine: false, verified })
+      messages.push({ peerId, identityId, color, text, isMine: false, verified })
       await saveMessages()
       render()
     },
-    (peerId, color, publicKey) => {
-      canSend = connection?.canSend() || false
-      myColor = connection?.getMyColor() || myColor
+    async (peerId, color, publicKey) => {
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
-      addNotification(color, 'has joined', verified)
+      await addNotification(peerId, color, 'has joined', publicKey, verified)
     },
-    (peerId, color, publicKey) => {
-      canSend = connection?.canSend() || false
-      myColor = connection?.getMyColor() || myColor
+    async (peerId, color, publicKey) => {
       const existing = typingPeers.get(peerId)
       if (existing) {
         clearTimeout(existing.timeout)
@@ -767,18 +767,47 @@ async function joinRoom(roomId: string, passwordRequired: boolean, password: str
       }
       const stored = publicKey ? getStoredPeerKey(roomId, peerId, publicKey) : null
       const verified = stored?.status === 'verified'
-      addNotification(color, 'has left', verified)
+      await addNotification(peerId, color, 'has left', publicKey, verified)
     },
     (newStatus) => {
       canSend = newConnection.canSend()
       status = newStatus
       if (currentRoomId === roomId && newConnection.isClosed()) {
         onRoomLeft(roomId)
+        for (const typing of typingPeers.values()) clearTimeout(typing.timeout)
+        typingPeers.clear()
+        closeVerificationPanel()
       }
       addSystemMessage(newStatus)
     },
     handleKeyChange,
-    handleTyping
+    handleTyping,
+    async () => {
+      canSend = newConnection.canSend()
+      myColor = newConnection.getMyColor()
+      const peerIds = new Set(newConnection.getPeerIds())
+      const publicKeys = [newConnection.getMyPublicKey(), ...[...peerIds].map(id => newConnection.getPeerPublicKey(id))]
+      const identityEntries = await Promise.all(publicKeys.filter((key): key is string => Boolean(key)).map(async key => {
+        const identityId = await fingerprintKey(key)
+        return [identityId, newConnection.getIdentityColor(key)] as const
+      }))
+      const identityColors = new Map(identityEntries)
+      for (const message of messages) {
+        const color = message.identityId ? identityColors.get(message.identityId) : undefined
+        if (color) message.color = color
+      }
+      for (const [peerId, typing] of typingPeers) {
+        if (peerIds.has(peerId)) {
+          typing.color = newConnection.getPeerColor(peerId)
+        } else {
+          clearTimeout(typing.timeout)
+          typingPeers.delete(peerId)
+        }
+      }
+      if (selectedPeerForVerification && !peerIds.has(selectedPeerForVerification)) closeVerificationPanel()
+      await saveMessages()
+      render()
+    }
   )
 
   try {
@@ -817,7 +846,9 @@ async function handleSendMessage(): Promise<void> {
   if (!text || !canSend) return
 
   lastTypingSent = 0
-  messages.push({ peerId: myPeerId, color: myColor, text, isMine: true })
+  const publicKey = connection?.getMyPublicKey()
+  const identityId = publicKey ? await fingerprintKey(publicKey) : undefined
+  messages.push({ peerId: myPeerId, identityId, color: myColor, text, isMine: true })
   await saveMessages()
   input.value = ''
   render()

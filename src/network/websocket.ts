@@ -2,13 +2,20 @@ import { config } from './config'
 import { RoomAccessError, retryMessage } from './rooms'
 import { GroupKeyManager, deriveColorFromPublicKey, isValidPublicKey } from '../crypto/crypto'
 import type { PeerColor, TreeKemCommit, TreeKemWelcome } from '../crypto/crypto'
-import { checkPeerKey, storePeerKey } from '../crypto/tofu'
+import { checkPeerKey, getStoredPeerKey, storePeerKey } from '../crypto/tofu'
 
-export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void
-export type PeerHandler = (peerId: string, color: PeerColor, publicKey?: string) => void
+export type MessageHandler = (peerId: string, color: PeerColor, message: string) => void | Promise<void>
+export type PeerHandler = (peerId: string, color: PeerColor, publicKey?: string) => void | Promise<void>
 export type StatusHandler = (status: string) => void
 export type KeyChangeHandler = (peerId: string, color: PeerColor) => void
 export type TypingHandler = (peerId: string, color: PeerColor) => void
+
+interface PeerKey {
+  peer_id: string
+  public_key: string
+  pq_public_key: string
+  sig?: string
+}
 
 interface WsMessage {
   type: string
@@ -28,6 +35,7 @@ interface WsMessage {
   counter?: number
   tree_commit?: string
   tree_welcome?: string
+  peers?: PeerKey[]
 }
 
 export class ChatConnection {
@@ -41,6 +49,8 @@ export class ChatConnection {
   private onStatus: StatusHandler
   private onKeyChange?: KeyChangeHandler
   private onTyping?: TypingHandler
+  private onPeersChanged?: () => void | Promise<void>
+  private receivedPeerSnapshot = false
   private messagesSinceRekey: number = 0
   private rekeyInterval: number = 50
   private state: 'idle' | 'connecting' | 'authenticating' | 'joining' | 'joined' | 'closed' = 'idle'
@@ -58,7 +68,8 @@ export class ChatConnection {
     onPeerLeft: PeerHandler,
     onStatus: StatusHandler,
     onKeyChange?: KeyChangeHandler,
-    onTyping?: TypingHandler
+    onTyping?: TypingHandler,
+    onPeersChanged?: () => void | Promise<void>
   ) {
     this.roomId = roomId
     this.keyManager = new GroupKeyManager()
@@ -68,6 +79,7 @@ export class ChatConnection {
     this.onStatus = onStatus
     this.onKeyChange = onKeyChange
     this.onTyping = onTyping
+    this.onPeersChanged = onPeersChanged
   }
 
   async prepare(): Promise<CryptoKey> {
@@ -108,6 +120,7 @@ export class ChatConnection {
       }).catch(() => {
         this.fail(new RoomAccessError('Invalid response from room server'))
       })
+      return messageQueue
     }
     this.ws.onclose = () => {
       this.fail(new RoomAccessError('Disconnected from room'))
@@ -203,7 +216,8 @@ export class ChatConnection {
           type: 'key_announce',
           public_key: publicKey,
           pq_public_key: pqPublicKey,
-          sig: sig || undefined
+          sig: sig || undefined,
+          peer_snapshot: true
         })
         // Protocol 1 has no admission acknowledgement after key announcement.
         if (!this.passwordRequired) this.completeAdmission()
@@ -215,57 +229,59 @@ export class ChatConnection {
         break
       }
 
+      case 'peer_snapshot': {
+        if (this.receivedPeerSnapshot || !Array.isArray(data.peers) || data.peers.length > 15) {
+          throw new Error('Invalid peer snapshot')
+        }
+        const peerIds = new Set<string>()
+        for (const peer of data.peers) {
+          if (!peer || typeof peer.peer_id !== 'string' || !peer.peer_id || peer.peer_id === this.peerId || peerIds.has(peer.peer_id)) {
+            throw new Error('Invalid peer snapshot')
+          }
+          peerIds.add(peer.peer_id)
+        }
+        this.receivedPeerSnapshot = true
+        const addedPeers: string[] = []
+        for (const peer of data.peers) {
+          if (await this.addPeer(peer)) addedPeers.push(peer.peer_id)
+          if (this.isClosed()) return
+        }
+        await this.welcomePeers(addedPeers)
+        if (this.isClosed()) return
+        await this.onPeersChanged?.()
+        break
+      }
+
       case 'peer_key':
-      case 'peer_joined':
+      case 'peer_joined': {
         if (data.peer_id && data.public_key) {
-          if (!isValidPublicKey(data.public_key)) {
-            console.error('Received invalid public key from peer', data.peer_id)
-            return
-          }
-          if (!data.pq_public_key) {
-            this.onStatus('A peer was rejected: no post-quantum key support')
-            return
-          }
-          const keyCheck = checkPeerKey(this.roomId, data.peer_id, data.public_key)
-
-          if (keyCheck.status === 'key_changed') {
-            if (this.onKeyChange) {
-              const color = await deriveColorFromPublicKey(data.public_key)
-              this.onKeyChange(data.peer_id, color)
-            }
-            return
-          }
-
-          if (keyCheck.isNewKey) {
-            storePeerKey(this.roomId, data.peer_id, data.public_key)
-          }
-
-          try {
-            if (!await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key, data.sig)) return
-          } catch (e) {
-            console.error('Peer rejected:', e)
-            this.onStatus('A peer was rejected: invalid signature')
-            return
-          }
-          const color = this.keyManager.getPeerColor(data.peer_id)
-          this.onPeerJoined(data.peer_id, color, data.public_key)
-
-          if (this.keyManager.hasTreeState() && this.keyManager.shouldInitiateRekey(data.peer_id)) {
-            await this.sendTreeCommit()
-            await this.sendTreeWelcome(data.peer_id)
+          const identityPresent = this.hasIdentity(data.public_key)
+          if (!await this.addPeer(data)) return
+          await this.welcomePeers([data.peer_id])
+          if (this.isClosed()) return
+          await this.onPeersChanged?.()
+          if (this.isClosed()) return
+          if (data.type === 'peer_joined' && !identityPresent) {
+            const color = this.keyManager.getPeerColor(data.peer_id)
+            await this.onPeerJoined(data.peer_id, color, data.public_key)
           }
         }
         break
+      }
 
       case 'peer_left':
         if (data.peer_id) {
           const color = this.keyManager.getPeerColor(data.peer_id)
           const publicKey = this.keyManager.getPeerPublicKey(data.peer_id)
+          if (!publicKey) return
           this.keyManager.removePeer(data.peer_id)
-          this.onPeerLeft(data.peer_id, color, publicKey)
-          if (this.keyManager.shouldInitiateRekey() && this.keyManager.hasPeers()) {
+          if (this.keyManager.hasTreeState() && this.keyManager.shouldInitiateRekey() && this.keyManager.hasPeers()) {
             await this.sendTreeCommit()
           }
+          if (this.isClosed()) return
+          await this.onPeersChanged?.()
+          if (this.isClosed()) return
+          if (!this.hasIdentity(publicKey)) await this.onPeerLeft(data.peer_id, color, publicKey)
         }
         break
 
@@ -274,10 +290,11 @@ export class ChatConnection {
           try {
             const welcome: TreeKemWelcome = JSON.parse(data.tree_welcome)
             await this.keyManager.receiveWelcome(welcome)
+            if (this.isClosed()) return
             this.onStatus('Ready to chat')
           } catch (e) {
             console.error('Failed to receive tree welcome:', e)
-            this.onStatus('Failed to receive encryption key')
+            if (!this.isClosed()) this.onStatus('Failed to receive encryption key')
           }
         }
         break
@@ -287,6 +304,7 @@ export class ChatConnection {
           try {
             const commit: TreeKemCommit = JSON.parse(data.tree_commit)
             await this.keyManager.receiveCommit(commit, data.peer_id)
+            if (this.isClosed()) return
             this.messagesSinceRekey = 0
             this.onStatus('Encryption key rotated')
           } catch (e) {
@@ -296,11 +314,11 @@ export class ChatConnection {
         break
 
       case 'message':
-        if (data.peer_id && data.payload) {
+        if (data.peer_id && data.payload && this.keyManager.getPeerPublicKey(data.peer_id)) {
           try {
             const decrypted = await this.keyManager.decryptMessage(data.peer_id, data.payload, data.epoch ?? 0, data.counter ?? 0)
             const color = this.keyManager.getPeerColor(data.peer_id)
-            this.onMessage(data.peer_id, color, decrypted)
+            if (!this.isClosed()) await this.onMessage(data.peer_id, color, decrypted)
           } catch {
             console.error('Failed to decrypt message from', data.peer_id)
           }
@@ -309,8 +327,9 @@ export class ChatConnection {
 
       case 'typing':
         if (data.peer_id && this.onTyping) {
-          const color = this.keyManager.getPeerColor(data.peer_id)
-          this.onTyping(data.peer_id, color)
+          const publicKey = this.keyManager.getPeerPublicKey(data.peer_id)
+          const peerId = this.getPeerIds().find(id => this.keyManager.getPeerPublicKey(id) === publicKey)
+          if (peerId) this.onTyping(peerId, this.keyManager.getPeerColor(peerId))
         }
         break
 
@@ -321,6 +340,49 @@ export class ChatConnection {
       case 'room_full':
         this.fail(new RoomAccessError('This room is full'))
         break
+    }
+  }
+
+  private hasIdentity(publicKey: string): boolean {
+    return publicKey === this.publicKey || this.keyManager.getPeerIds().some(id => this.keyManager.getPeerPublicKey(id) === publicKey)
+  }
+
+  private async addPeer(data: Partial<PeerKey>): Promise<boolean> {
+    if (!data.peer_id || data.peer_id === this.peerId || !data.public_key || !isValidPublicKey(data.public_key)) {
+      return false
+    }
+    if (!data.pq_public_key) {
+      this.onStatus('A peer was rejected: no post-quantum key support')
+      return false
+    }
+    if (getStoredPeerKey(this.roomId, data.peer_id, data.public_key)?.status === 'key_changed') {
+      if (this.onKeyChange) {
+        const color = await deriveColorFromPublicKey(data.public_key)
+        if (!this.isClosed()) this.onKeyChange(data.peer_id, color)
+      }
+      return false
+    }
+    try {
+      if (!await this.keyManager.addPeer(data.peer_id, data.public_key, data.pq_public_key, data.sig)) return false
+    } catch (e) {
+      console.error('Peer rejected:', e)
+      if (!this.isClosed()) this.onStatus('A peer was rejected: invalid signature')
+      return false
+    }
+    if (this.isClosed()) return false
+    checkPeerKey(this.roomId, data.peer_id, data.public_key)
+    storePeerKey(this.roomId, data.peer_id, data.public_key)
+    return true
+  }
+
+  private async welcomePeers(peerIds: string[]): Promise<void> {
+    if (!this.keyManager.hasTreeState()) return
+    const targets = peerIds.filter(id => this.keyManager.shouldInitiateRekey(id))
+    if (targets.length === 0) return
+    await this.sendTreeCommit()
+    for (const peerId of targets) {
+      if (this.isClosed()) return
+      await this.sendTreeWelcome(peerId)
     }
   }
 
@@ -385,11 +447,11 @@ export class ChatConnection {
   }
 
   getPeerCount(): number {
-    return this.keyManager.getPeerIds().length
+    return this.getPeerIds().length
   }
 
   canSend(): boolean {
-    return this.state === 'joined' && this.ws?.readyState === WebSocket.OPEN && this.keyManager.hasChain() && this.keyManager.hasPeers()
+    return this.state === 'joined' && this.ws?.readyState === WebSocket.OPEN && this.keyManager.hasChain() && this.getPeerCount() > 0
   }
 
   getMyColor(): PeerColor {
@@ -406,15 +468,26 @@ export class ChatConnection {
   }
 
   getPeerPublicKey(peerId: string): string | undefined {
-    return this.keyManager.getPeerPublicKey(peerId)
+    return this.isClosed() ? undefined : this.keyManager.getPeerPublicKey(peerId)
   }
 
   getPeerColor(peerId: string): PeerColor {
     return this.keyManager.getPeerColor(peerId)
   }
 
+  getIdentityColor(publicKey: string): PeerColor | undefined {
+    return this.keyManager.getIdentityColor(publicKey)
+  }
+
   getPeerIds(): string[] {
-    return this.keyManager.getPeerIds()
+    if (this.isClosed()) return []
+    const identities = new Set([this.publicKey])
+    return this.keyManager.getPeerIds().sort().filter(peerId => {
+      const publicKey = this.keyManager.getPeerPublicKey(peerId)
+      if (!publicKey || identities.has(publicKey)) return false
+      identities.add(publicKey)
+      return true
+    })
   }
 
   getRoomId(): string {

@@ -343,7 +343,7 @@ export class GroupKeyManager {
   private myColor: PeerColor = 'blue'
   private peerPublicKeys: Map<string, string> = new Map()
   private peerSigningKeys: Map<string, Uint8Array> = new Map()
-  private peerColors: Map<string, PeerColor> = new Map()
+  private identityColors: Map<string, PeerColor> = new Map()
   private colorPreferences: Map<string, PeerColor[]> = new Map()
   private groupKey: CryptoKey | null = null
   private isCreator: boolean = false
@@ -366,6 +366,7 @@ export class GroupKeyManager {
     const prefs = await deriveColorPreferences(publicKey)
     this.colorPreferences.set(publicKey, prefs)
     this.myColor = prefs[0]
+    this.identityColors.set(publicKey, this.myColor)
 
     this.mlKemKeyPair = await generateMlKemKeyPair()
 
@@ -420,15 +421,16 @@ export class GroupKeyManager {
 
   async addPeer(peerId: string, publicKeyBase64: string, pqPublicKeyBase64: string, sigBase64?: string): Promise<boolean> {
     if (!this.signingKeyPair) throw new Error('Signing key pair not initialized')
+    if (!peerId || peerId === this.myPeerId) throw new Error('Invalid peer ID')
+    if (!isValidPublicKey(publicKeyBase64)) throw new Error('Invalid ML-DSA public key')
     if (!isValidMlKemPublicKey(pqPublicKeyBase64)) throw new Error('Invalid ML-KEM public key')
+    if (!sigBase64) throw new Error('Missing ML-DSA signature on ML-KEM public key')
 
-    if (sigBase64) {
-      const signingPub = base64ToUint8Array(publicKeyBase64)
-      const sigBytes = base64ToUint8Array(sigBase64)
-      const pqPubBytes = base64ToUint8Array(pqPublicKeyBase64)
-      if (!verify(signingPub, pqPubBytes, sigBytes)) {
-        throw new Error('Invalid ML-DSA signature on ML-KEM public key')
-      }
+    const signingPub = base64ToUint8Array(publicKeyBase64)
+    const sigBytes = base64ToUint8Array(sigBase64)
+    const pqPubBytes = base64ToUint8Array(pqPublicKeyBase64)
+    if (!verify(signingPub, pqPubBytes, sigBytes)) {
+      throw new Error('Invalid ML-DSA signature on ML-KEM public key')
     }
 
     const existingPublicKey = this.peerPublicKeys.get(peerId)
@@ -465,10 +467,10 @@ export class GroupKeyManager {
   removePeer(peerId: string): void {
     const pubKey = this.peerPublicKeys.get(peerId)
     this.peerPublicKeys.delete(peerId)
-    this.peerColors.delete(peerId)
     this.peerMlKemPublicKeys.delete(peerId)
     this.peerSigningKeys.delete(peerId)
     this.peerChainStates.delete(peerId)
+    this.previousEpochChains?.delete(peerId)
     if (pubKey && pubKey !== this.myPublicKey && !Array.from(this.peerPublicKeys.values()).includes(pubKey)) {
       this.colorPreferences.delete(pubKey)
     }
@@ -483,30 +485,24 @@ export class GroupKeyManager {
   }
 
   private recomputeColors(): void {
-    const allEntries: { id: string; publicKey: string }[] = [
-      { id: this.myPeerId, publicKey: this.myPublicKey }
-    ]
-    for (const [peerId, pubKey] of this.peerPublicKeys) {
-      allEntries.push({ id: peerId, publicKey: pubKey })
-    }
-
-    allEntries.sort((a, b) => a.publicKey.localeCompare(b.publicKey) || a.id.localeCompare(b.id))
-
+    const publicKeys = [...new Set([this.myPublicKey, ...this.peerPublicKeys.values()])].sort()
     const taken = new Set<PeerColor>()
-    for (const entry of allEntries) {
-      const prefs = this.colorPreferences.get(entry.publicKey)!
+    for (const publicKey of publicKeys) {
+      const prefs = this.colorPreferences.get(publicKey)!
       const color = prefs.find(c => !taken.has(c)) || prefs[0]
       taken.add(color)
-      if (entry.id === this.myPeerId) {
-        this.myColor = color
-      } else {
-        this.peerColors.set(entry.id, color)
-      }
+      this.identityColors.set(publicKey, color)
+      if (publicKey === this.myPublicKey) this.myColor = color
     }
   }
 
   getPeerColor(peerId: string): PeerColor {
-    return this.peerColors.get(peerId) || 'blue'
+    const publicKey = this.peerPublicKeys.get(peerId)
+    return publicKey ? this.identityColors.get(publicKey) || 'blue' : 'blue'
+  }
+
+  getIdentityColor(publicKey: string): PeerColor | undefined {
+    return this.identityColors.get(publicKey)
   }
 
   async generateWelcomeForPeer(peerId: string): Promise<TreeKemWelcome> {

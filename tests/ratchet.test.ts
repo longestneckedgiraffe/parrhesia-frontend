@@ -58,4 +58,13 @@ describe('symmetric chain ratchet', () => {
       b.mgr.decryptMessage('a', e.payload, oldEpoch + 5, e.counter)
     ).rejects.toThrow(/Unknown epoch/)
   })
+
+  it('removes departed connections from retained previous-epoch chains', async () => {
+    const [a, b] = await buildGroup(2)
+    const message = await b.mgr.encryptMessage('queued before departure')
+    await b.mgr.receiveCommit(await a.mgr.initiateRekey())
+    a.mgr.removePeer(b.id)
+    await expect(a.mgr.decryptMessage(b.id, message.payload, message.epoch, message.counter))
+      .rejects.toThrow('No chain for peer')
+  })
 })

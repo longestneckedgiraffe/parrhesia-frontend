@@ -48,6 +48,7 @@ describe('room rejoin membership', () => {
 
   it('assigns the same colors at every connection while an identity overlaps', async () => {
     const [a, b] = await buildGroup(2)
+    const originalColor = b.mgr.getMyColor()
     const c = await rejoin('c', a.id)
     await addPeer(a, c)
     await addPeer(b, c)
@@ -58,6 +59,9 @@ describe('room rejoin membership', () => {
     expect(a.mgr.getPeerColor(c.id)).toBe(c.mgr.getMyColor())
     expect(b.mgr.getPeerColor(c.id)).toBe(c.mgr.getMyColor())
     expect(c.mgr.getPeerColor(b.id)).toBe(b.mgr.getMyColor())
+    expect(b.mgr.getMyColor()).toBe(originalColor)
+    expect(c.mgr.getMyColor()).toBe(originalColor)
+    expect(a.mgr.getPeerColor(b.id)).toBe(a.mgr.getPeerColor(c.id))
   })
 
   it('ignores a repeated key announcement without resetting message counters or adding a leaf', async () => {
